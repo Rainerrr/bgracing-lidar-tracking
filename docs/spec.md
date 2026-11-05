@@ -164,7 +164,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 1. **Reset check.** If the stamp went backward, clear all tracks and increment `pass`. This handles the dataset loop. Phase 3 decides how a large forward gap is handled: the v2 rule of resetting on gaps over 1 s would also fire after a processing stall.
 2. **Region of interest.** Keep x in [-40, 40] m, y in [-20, 20] m and z in [-3, 2] m. Drop the box around the ego car (`|x| < 2.5 m`, `|y| < 1.5 m`).
 3. **Voxel downsample.** Keep one point per occupied 0.15 m voxel, placed at the voxel's grid center, using `np.unique` on packed integer voxel keys. The result does not depend on point order. This cuts about 120k points to roughly 30k (Phase 2 measured a mean of 31.9k).
-4. **Ground removal (RANSAC, seeded).** Fit a plane from 3 random points, 100 iterations. Count inliers within 0.2 m, take the best plane, and accept it only if it is near-horizontal (`|normal z| > 0.9`, about 25.8° of tilt or less); remove its inliers. If it is not accepted, the frame is marked `no_plane` and nothing is removed. (Filtering candidates by tilt before taking the best was tried in Phase 2 and rejected: noisy normals of a 30° plane passed and 42–73 % of it was removed.)
+4. **Ground removal (RANSAC, seeded).** Fit a plane from 3 random points, 100 iterations. Count inliers within 0.2 m, take the best plane, and accept it only if it is near-horizontal (`|normal z| > 0.9`, about 25.8° of tilt or less); remove its inliers. If it is not accepted, the frame is marked `no_plane` and nothing is removed. (Filtering candidates by tilt before taking the best was tried in Phase 2 and rejected: noisy normals of a 30° plane passed and 42–73 % of it was removed.) **Local ground tiles (decided Nov 6, Phase 2):** after an accepted global plane, the ground is refined per 10 × 10 m tile. Each tile fits its own least-squares plane to its voxels within 0.6 m of the global plane (trimmed twice to 0.15 m), and voxels within 0.2 m of the tile plane are removed as ground too. A tile with fewer than 30 candidates, a singular fit, or a plane failing the same tilt rule keeps the global result. One plane can't follow 80 m of road, and the band of ground left 0.2–0.4 m above it bridged cars to walls and bushes in the 2D clustering, so the size filter dropped the merged blob: measured, 72 of 92 missed Car/Van box-frames were such merges.
 5. **Clustering.** Run DBSCAN on the (x, y) coordinates only, with eps 0.6 m and min_samples 8. Clustering in 2D is faster and avoids splitting objects vertically.
 6. **Cluster filtering.** Keep clusters with at least 10 voxelized points, an *oriented* length ≤ 7 m and width ≤ 3 m (the minimum-area rectangle of the cluster's (x, y) footprint, one voxel added to each side) and a z extent between 0.3 and 3 m. This removes walls, buildings and vegetation. Axis-aligned extents were rejected in Phase 2: the ego turns about 75°, so they reject 37–46 % of real vans even with perfect segmentation.
 7. **Detections.** For each cluster, compute the axis-aligned box in the velodyne frame: center (the midpoint of the voxel bounds, more stable than the mean of points) and extents dx, dy, dz. In Phase 3, transform centers to the world frame with the paired ego pose, unless `ego_compensation` is off.
@@ -197,6 +197,10 @@ Every `MarkerArray` begins with a `DELETEALL` marker, so deleted tracks don't le
 - `ransac_iters: 100`
 - `ransac_dist: 0.2`
 - `ransac_min_normal_z: 0.9`
+- `ground_tile_size: 10.0`
+- `ground_tile_band: 0.6`
+- `ground_tile_min_points: 30`
+- `ground_tile_trim: 0.15`
 - `seed: 42`
 - `dbscan_eps: 0.6`
 - `dbscan_min_samples: 8`
@@ -472,7 +476,7 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 **In scope**
 
-- The ROS-free perception core: pipeline steps 2–7 in the velodyne frame, with seeded RANSAC (`processor/perception.py`; `core/` stays numpy-only).
+- The ROS-free perception core: pipeline steps 2–7 in the velodyne frame, with seeded RANSAC and local ground tiles (`processor/perception.py`; `core/` stays numpy-only).
 - The offline runner (`scripts/run_offline.py`, detections and recall).
 - The live node replaces the probe. It publishes the filtered cloud and box markers (velodyne frame until Phase 3), writes the same detection files as the offline runner, and every `MarkerArray` starts with `DELETEALL`.
 - Per-frame timing and a dropped-frame count go into `metrics.json`.
@@ -483,11 +487,12 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 - E2.1 **Unit tests on synthetic clouds:**
   - flat ground plus one car-sized box gives one detection within 0.15 m of the right center;
+  - ground with a raised sidewalk, or bending 5°, is removed by local tiles (with a control showing the global plane alone leaves it, and a car/wall pair it would merge);
   - ground tilted 20° and 24° is removed, while ground tilted 30° is not accepted as ground (at every one of 20 stamps; 27° is below the resolution of voxel-snapped three-point normals and is not gated);
   - an empty cloud, or one with fewer than 8 points, gives zero detections and no crash;
   - a 20 m wall is filtered out, also at 45°, while a car-sized box at 45° survives (the oriented size filter);
   - two boxes 0.5 m apart behave as the test documents (eps 0.6 merges them).
-- E2.2 **Offline recall** against ground truth: cars and vans, front half of the ROI, velodyne frame, one-to-one Hungarian matching on 2D centers with a 2.0 m gate, all 154 frames (denominator: 520 Car+Van box-frames). **Car+Van recall ≥ 0.8** (decided Nov 5; perfect-segmenter ceiling with the oriented filter 0.992). Reported per class and per Car/Van tracklet with object counts; Pedestrian and Cyclist are small samples and not gated.
+- E2.2 **Offline recall** against ground truth: cars and vans, front half of the ROI, velodyne frame, one-to-one Hungarian matching on 2D centers with a 2.0 m gate, all 154 frames (denominator: 520 Car+Van box-frames). **Car+Van recall ≥ 0.8** (decided Nov 5; perfect-segmenter ceiling with the oriented filter 0.992; measured 0.823 with the global plane alone and 0.908 with local ground tiles). Reported per class and per Car/Van tracklet with object counts; Pedestrian and Cyclist are small samples and not gated.
 - E2.3: two offline runs produce byte-identical detection, stage and recall files (per CPU architecture).
 - E2.4: offline p95 time per frame for steps 2–7 **≤ 75 ms** on the dev machine (Apple M5 Pro, Docker arm64; nearest-rank over 154 frames, file reads excluded, three runs each passing). Live clouds arrive every 100 ms of wall time (the publisher's 10 Hz timer). A live run reports its dropped-frame count next to Phase 1's transport baseline (about 2 % lost); not gated.
 - E2.5: live, every `MarkerArray` begins with `DELETEALL`, and the `LINE_LIST` count equals the detection count for that stamp. A Foxglove screenshot shows the boxes.
@@ -642,7 +647,7 @@ Cut only Phase 6 items: first the DBSCAN sweep, then the greedy ablation. Never 
 | Ego pose looks wrong | Parked ground truth drifts in the world frame (E1.2 fails) | Plot the OXTS path alone; check the calibration direction (IMU → velo vs velo → IMU) | 1 |
 | DDS discovery fails between containers | `ros2 topic list` in B misses A's topics | Same `ROS_DOMAIN_ID`; try `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`; last resort `network_mode: host` on Linux | 1, 2 |
 | Processing exceeds the budget | p95 above budget, dropped frames | Larger voxels, tighter ROI, fewer RANSAC iterations; lower `rate_hz`. The budget (100 ms) is only ~3 ms under the sensor period. | 2 |
-| Walls or bushes tracked as obstacles | Large or oddly shaped boxes | Tighten size filters; require a minimum height | 2 |
+| Walls or bushes tracked as obstacles, or cars merged into them | Large or oddly shaped boxes; a car missing for a frame | Local ground tiles (a leftover band of ground bridged cars to walls in the 2D clustering; measured in Phase 2); tighten size filters; require a minimum height. Unlabeled clutter (about 32 unmatched boxes per frame) is a Phase 4 precision question, not a ground problem | 2 |
 | False reset after a stall | Tracks vanish mid-drive; `pass` increments without a loop | Reset only on backward stamps; let misses age out stale tracks | 3 |
 | Velocities are noisy | Arrows flicker | Raise `r_pos`, require more hits before confirming, use box center rather than mean | 3 |
 | Live and offline disagree | Parity check (E3.4) fails | Check dropped frames, stamp pairing and seeding before trusting either | 3 |
@@ -691,11 +696,14 @@ Only after Phase 6:
 - The sensor rate is ≈ 9.7 Hz.
 - The size filter uses oriented extents (Phase 2).
 - Ground is accepted only if the *best* plane is near-horizontal (Phase 2).
+- Ground is refined per 10 m tile after the global plane: the global plane alone leaves a band of ground that merges cars with their surroundings (Phase 2).
 
 **Open:**
 
 - Does the form allow resubmission? If yes, submit at the end of Phase 5 and again after Phase 6. If no, submit once, after Phase 6 or in the deadline buffer.
 - The remaining open items are listed in their phases: Phase 3 (forward gaps), Phase 5 (GIF), Phase 6 (greedy definition).
+
+**Decided during Phase 2 (Nov 6, 2026):** local ground tiles after the global RANSAC plane (rejected: a 0.3 m inlier distance, which gives recall 0.894 and half the flicker fix; re-splitting oversized clusters, which gives recall 0.944 but 95 ms p95, over the 75 ms bar). The recall bar stays 0.8 and the time bar 75 ms: bars were not moved after seeing results. Measured before/after on the same drive: Car+Van recall 0.823 → 0.908, single-frame misses 38 → 7, offline p95 about 50 ms before and after.
 
 **Decided in the Phase 2 spec (Nov 5, 2026):** the size filter measures oriented length and width (rejected: oriented boxes everywhere, a wider axis-aligned width, keeping it as written); E2.2 bar Car+Van recall ≥ 0.8 (rejected: 0.9, 0.7); E2.4 bar p95 ≤ 75 ms (rejected: 100 ms, 50 ms); a new E2.6 live/offline parity criterion (rejected: leaving it to E3.4). Security re-check: not triggered (no new package, no port change). Details are in `docs/specs/phase-2-detection/FEATURE_SPEC.md`, which is a local file.
 

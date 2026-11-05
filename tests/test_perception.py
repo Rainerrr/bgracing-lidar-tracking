@@ -263,3 +263,103 @@ def test_oriented_extents_degenerate_inputs():
     line = np.column_stack([np.linspace(0, 6, 40), np.linspace(0, 8, 40)])  # collinear: hull is degenerate
     length, width = pc.oriented_extents(line, 0.0)
     assert length == pytest.approx(10.0, abs=1e-6) and width == pytest.approx(0.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------- local ground tiles (Phase 2, decided Nov 6)
+
+def ramp(x0, x1, y0, y1, slope_deg, z0=-1.7, x_ref=20.0, step=0.1):
+    """Ground that rises along x from x_ref at slope_deg (flat before it is not generated here)."""
+    xs, ys = np.meshgrid(np.arange(x0, x1, step), np.arange(y0, y1, step))
+    return np.stack([xs.ravel(), ys.ravel(), z0 + (xs.ravel() - x_ref) * np.tan(np.radians(slope_deg))], axis=1)
+
+
+def no_tiles(monkeypatch):
+    """The control: same pipeline, global RANSAC plane only."""
+    monkeypatch.setattr(pc, "refine_ground_tiles", lambda centers, ground, p: ground)
+
+
+def test_tiles_equal_the_global_plane_on_flat_ground(params, monkeypatch):
+    cloud = scene(box_surface(15, 3, -1.7, 4.5, 1.8, 1.5))
+    with_tiles = pc.detect(cloud, STAMP, params)
+    no_tiles(monkeypatch)
+    without = pc.detect(cloud, STAMP, params)
+    assert with_tiles.detections == without.detections and with_tiles.stages == without.stages
+
+
+def test_two_level_ground_a_raised_sidewalk_is_removed_by_its_own_tile(params, monkeypatch):
+    road = plane_patch(5, 35, -15, 10, z0=-1.7)
+    sidewalk = plane_patch(5, 35, 10, 15, z0=-1.5)  # 0.2 m higher: above the global band (voxel centers 0.225 apart)
+    cloud = np.vstack([road, sidewalk])
+    res = pc.detect(cloud, STAMP, params)
+    assert res.ground_status == pc.GROUND_OK and res.stages["non_ground"] <= 0.02 * res.stages["voxel"]
+    no_tiles(monkeypatch)
+    control = pc.detect(cloud, STAMP, params)
+    assert control.stages["non_ground"] > 1000 and control.stages["non_ground"] > 5 * res.stages["non_ground"], (
+        "control: without tiles the sidewalk is left behind")
+
+
+def sloped_scene():
+    flat = plane_patch(3, 20, -15, 15, z0=-1.7)
+    sloped = ramp(20, 32, -15, 15, slope_deg=5.0)
+    z_car = -1.7 + (26 - 20) * np.tan(np.radians(5.0))
+    car = box_surface(26.0, 0.0, z_car, 4.5, 1.8, 1.5)
+    wall_ = wall(26.0, 4.0, 26.0, 13.0, z_bottom=z_car, height=2.5)
+    return np.vstack([flat, sloped, car, wall_])
+
+
+def test_tiles_keep_a_car_separate_from_a_wall_when_the_ground_bends(params, monkeypatch):
+    cloud = sloped_scene()
+    res = pc.detect(cloud, STAMP, params)
+    near_car = [d for d in res.detections if abs(d.x - 26.0) < 1.0 and abs(d.y) < 1.0]
+    assert len(near_car) == 1, res.detections
+    no_tiles(monkeypatch)
+    control = pc.detect(cloud, STAMP, params)
+    assert not [d for d in control.detections if abs(d.x - 26.0) < 1.0 and abs(d.y) < 1.0], (
+        "control: the leftover sloped ground merges the car with the wall and the size filter drops the blob")
+
+
+def voxels_of(points, params):
+    return pc.voxel_downsample(points, params.voxel_size)[0]
+
+
+def test_a_tile_with_too_few_ground_candidates_keeps_the_global_result(params):
+    flat = voxels_of(plane_patch(10, 20, 0, 10, z0=-1.7), params)  # dense tile (10..20, 0..10)
+    for n_far, expect_removed in ((12, False), (60, True)):
+        far = voxels_of(plane_patch(30.0, 30.0 + 0.15 * n_far, 2.0, 2.15, z0=-1.45), params)  # 0.2+ above the global plane
+        centers = np.vstack([flat, far])
+        global_mask = np.zeros(len(centers), dtype=bool)
+        global_mask[:len(flat)] = True
+        refined = pc.refine_ground_tiles(centers, global_mask, params)
+        assert np.array_equal(refined[:len(flat)], global_mask[:len(flat)])
+        assert refined[len(flat):].all() == expect_removed and refined[len(flat):].any() == expect_removed, n_far
+
+
+def test_a_steep_tile_is_not_used_as_ground(params):
+    flat = voxels_of(plane_patch(0, 10, -10, 0, z0=-1.7), params)  # the global plane's tile
+    steep = voxels_of(ramp(10, 11.2, 0, 10, slope_deg=30, z0=-1.7, x_ref=10.0), params)  # tile (10..20, 0..10): a 30 degree ramp only
+    centers = np.vstack([flat, steep])
+    h = centers[:, 2] - (-1.65)
+    global_mask = np.abs(h) < 0.2
+    refined = pc.refine_ground_tiles(centers, global_mask, params)
+    assert np.array_equal(refined, global_mask), "a 30 degree tile must not become ground"
+    loose = dataclasses.replace(params, ransac_min_normal_z=0.5)
+    assert pc.refine_ground_tiles(centers, global_mask, loose).sum() > global_mask.sum(), "control: the tilt rule is what stopped it"
+
+
+def test_tiles_are_order_independent_and_deterministic(params):
+    cloud = sloped_scene()
+    shuffled = cloud[np.random.default_rng(7).permutation(len(cloud))]
+    a, b = pc.detect(cloud, STAMP, params), pc.detect(shuffled, STAMP, params)
+    assert a.detections == b.detections and a.stages == b.stages and np.array_equal(a.filtered_xyz, b.filtered_xyz)
+
+
+def test_plane_fit_recovers_a_known_plane_per_group():
+    rng = np.random.default_rng(0)
+    x, y = rng.uniform(-5, 5, 400), rng.uniform(-5, 5, 400)
+    group = np.repeat([0, 1], 200)
+    z = np.where(group == 0, 0.02 * x - 0.01 * y - 1.7, -0.05 * x + 0.03 * y - 1.4)
+    a, b, c, n = pc._fit_planes(x, y, z, group, 2, np.ones(400, dtype=bool))
+    assert np.allclose([a[0], b[0], c[0]], [0.02, -0.01, -1.7], atol=1e-9)
+    assert np.allclose([a[1], b[1], c[1]], [-0.05, 0.03, -1.4], atol=1e-9) and n.tolist() == [200, 200]
+    *_, n_one = pc._fit_planes(x[:2], y[:2], z[:2], np.zeros(2, dtype=np.int64), 1, np.ones(2, dtype=bool))
+    assert n_one[0] == 0, "an underdetermined fit reports count 0 so the tile keeps the global result"

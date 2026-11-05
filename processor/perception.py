@@ -95,6 +95,78 @@ def fit_ground(pts, stamp_ns, p):
     return inliers[best], GROUND_OK
 
 
+def _fit_planes(x, y, z, group, n_groups, use):
+    """Least-squares planes z = a*x + b*y + c, one per group, over the points where `use` is True.
+
+    Sums by np.bincount and the 3x3 normal equations solved by Cramer's rule, elementwise: no LAPACK or
+    BLAS call, so the arithmetic is the same on every CPU path. Returns (a, b, c, count); a group whose
+    system is singular gets count 0.
+    """
+    w = use.astype(np.float64)
+
+    def s(v):
+        return np.bincount(group, weights=w * v, minlength=n_groups)
+
+    n = np.bincount(group, weights=w, minlength=n_groups)
+    sx, sy, sz = s(x), s(y), s(z)
+    sxx, sxy, syy, sxz, syz = s(x * x), s(x * y), s(y * y), s(x * z), s(y * z)
+
+    def det3(a11, a12, a13, a21, a22, a23, a31, a32, a33):
+        return a11 * (a22 * a33 - a23 * a32) - a12 * (a21 * a33 - a23 * a31) + a13 * (a21 * a32 - a22 * a31)
+
+    det = det3(sxx, sxy, sx, sxy, syy, sy, sx, sy, n)
+    ok = np.abs(det) > 1e-9
+    safe = np.where(ok, det, 1.0)
+    a = det3(sxz, sxy, sx, syz, syy, sy, sz, sy, n) / safe
+    b = det3(sxx, sxz, sx, sxy, syz, sy, sx, sz, n) / safe
+    c = det3(sxx, sxy, sxz, sxy, syy, syz, sx, sy, sz) / safe
+    return a, b, c, np.where(ok, n, 0.0)
+
+
+def refine_ground_tiles(centers, ground, p):
+    """Local ground per tile, on top of the global RANSAC plane (docs/spec.md step 4, decided Nov 6).
+
+    One plane can't follow 80 m of road (crown, slopes, raised sidewalks); the band of ground it leaves
+    0.2-0.4 m above itself bridges cars to walls in the 2D clustering. Per ground_tile_size tile:
+    candidates are voxels within ground_tile_band of the global plane; a plane is fitted to them and
+    trimmed twice to the voxels within ground_tile_trim of it. A tile with fewer than
+    ground_tile_min_points voxels, a singular fit, or a plane steeper than the RANSAC acceptance rule
+    keeps the global result. Ground = global inliers plus voxels within ransac_dist of their tile plane.
+    """
+    if not ground.any():
+        return ground
+    x, y, z = centers[:, 0], centers[:, 1], centers[:, 2]
+    zero = np.zeros(len(centers), dtype=np.int64)
+    a0, b0, c0, n0 = _fit_planes(x, y, z, zero, 1, ground)
+    if n0[0] == 0:
+        return ground
+    h = z - (a0[0] * x + b0[0] * y + c0[0])
+
+    t = p.ground_tile_size
+    ti = np.floor(x / t).astype(np.int64)
+    tj = np.floor(y / t).astype(np.int64)
+    key = ((ti + _OFFSET) << 21) | (tj + _OFFSET)
+    _, tile = np.unique(key, return_inverse=True)
+    tile = tile.reshape(-1)
+    n_tiles = int(tile.max()) + 1
+    # tile-local coordinates keep the normal equations well conditioned
+    lx, ly = x - (ti + 0.5) * t, y - (tj + 0.5) * t
+
+    cand = np.abs(h) < p.ground_tile_band
+    a, b, c, cnt = _fit_planes(lx, ly, z, tile, n_tiles, cand)
+    active = cnt >= p.ground_tile_min_points
+    for _ in range(2):  # trim to the low, planar part; a tile that would drop below the minimum keeps its previous fit
+        r = z - (a[tile] * lx + b[tile] * ly + c[tile])
+        keep = cand & (np.abs(r) < p.ground_tile_trim)
+        a2, b2, c2, cnt2 = _fit_planes(lx, ly, z, tile, n_tiles, keep)
+        update = active & (cnt2 >= p.ground_tile_min_points)
+        a, b, c = np.where(update, a2, a), np.where(update, b2, b), np.where(update, c2, c)
+    flat = 1.0 / np.sqrt(1.0 + a * a + b * b) > p.ransac_min_normal_z  # same tilt rule as RANSAC
+    use = active & flat
+    r = z - (a[tile] * lx + b[tile] * ly + c[tile])
+    return ground | (use[tile] & (np.abs(r) < p.ransac_dist))
+
+
 # ---------------------------------------------------------------- step 5: clustering
 
 def cluster_xy(ijk, centers, p):
@@ -169,6 +241,8 @@ def detect(points, stamp_ns, p):
     ground, status = fit_ground(centers, stamp_ns, p)
     if status == TOO_FEW:  # nothing to fit: no ground, no detections, empty filtered cloud
         return FrameResult((), stages, 0, 0, status, empty)
+    if status == GROUND_OK:
+        ground = refine_ground_tiles(centers, ground, p)
     keep = ~ground
     centers, ijk = centers[keep], ijk[keep]
     stages["non_ground"] = len(centers)

@@ -28,7 +28,7 @@ KITTI raw drive `2011_09_26_drive_0005`, "synced + rectified": a city drive with
 | Points per sweep | mean 121,732; min 98,532; max 124,122 (float32 x, y, z, reflectance) |
 | Range | 83 % of points within 20 m of the sensor, 96 % within 40 m, none beyond 82 m |
 | Ego speed (OXTS) | 3.1–6.5 m/s, mean 4.5 m/s |
-| Points kept by each stage | 92.0 % after the ROI, 26.2 % after voxel downsampling, 14.7 % after ground removal, 3.5 % in the kept clusters (means 112,002 / 31,938 / 17,942 / 4,311 points per sweep) |
+| Points kept by each stage | 92.0 % after the ROI, 26.2 % after voxel downsampling, 12.5 % after ground removal, 3.8 % in the kept clusters (means 112,002 / 31,938 / 15,232 / 4,565 points per sweep) |
 | Ground truth | 15 tracklets (9 Car, 3 Van, 2 Pedestrian, 1 Cyclist), 717 boxes, all in front of the car |
 
 The numbers come from [`docs/samples/dataset_stats.json`](docs/samples/dataset_stats.json). Regenerate them (no publisher needed) into `output/`:
@@ -52,9 +52,14 @@ Each sweep goes through the same ROS-free code in the live node and in the offli
 1. **Region of interest:** x ∈ [−40, 40] m, y ∈ [−20, 20] m, z ∈ [−3, 2] m, minus the box around the ego car (|x| < 2.5 m, |y| < 1.5 m).
 2. **Voxel downsampling:** one point per 0.15 m voxel, placed at the voxel's grid center, so the result does not depend on point order.
 3. **Ground removal:** RANSAC plane fit (100 iterations, 0.2 m inlier distance), seeded per frame from a fixed seed and the sweep's stamp. The best plane is removed only if it is near-horizontal (|normal z| > 0.9, about 26° of tilt or less); otherwise the frame is marked `no_plane` and nothing is removed.
+   Then the ground is refined per 10 × 10 m tile: a plane is fitted to each tile's voxels within 0.6 m of the global plane (trimmed twice to 0.15 m) and voxels within 0.2 m of it are removed too. One plane can't follow 80 m of road, and the band of ground it leaves 0.2–0.4 m above itself used to join cars to walls and bushes in the 2D clustering. A tile with fewer than 30 candidates, or a plane steeper than the rule above, keeps the global result.
 4. **Clustering:** DBSCAN on (x, y), eps 0.6 m, at least 8 points.
 5. **Size filter:** a cluster stays if it has at least 10 voxels, an oriented length ≤ 7 m and width ≤ 3 m (the minimum-area rectangle of its footprint), and a height between 0.3 and 3 m. The orientation matters: the car turns about 75° during the drive, so an axis-aligned width limit would reject 37–46 % of the vans in the ground truth even with perfect segmentation.
 6. **Detection:** the axis-aligned box of each kept cluster (center, extents dx/dy/dz, voxel count). Boxes are not rotated.
+
+![Foxglove: filtered cloud and one labeled box per detection, live](docs/samples/detection_foxglove.png)
+
+The live view in Foxglove (fixed and display frame `velodyne`): the filtered cloud and one wireframe box per detection, each labeled with its size and point count.
 
 All parameters are in [`config/tracker.yaml`](config/tracker.yaml), read by the live node and the offline runner alike.
 
@@ -70,17 +75,17 @@ Scored against the KITTI tracklets in the front half of the region of interest (
 
 | Class | Matched / ground-truth boxes | Recall | Tracklets |
 |---|---|---|---|
-| **Car + Van (the gated number)** | **428 / 520** | **0.823** | 12 |
-| Car | 210 / 248 | 0.847 | 9 |
-| Van | 218 / 272 | 0.802 | 3 |
+| **Car + Van (the gated number)** | **472 / 520** | **0.908** | 12 |
+| Car | 234 / 248 | 0.944 | 9 |
+| Van | 238 / 272 | 0.875 | 3 |
 | Pedestrian (small sample) | 6 / 22 | 0.273 | 2 |
-| Cyclist (small sample) | 148 / 154 | 0.961 | 1 |
+| Cyclist (small sample) | 153 / 154 | 0.994 | 1 |
 
-- The mean distance between matched centers is 0.56 m (90th percentile 1.44 m). Boxes are axis-aligned and built from the points the sensor sees, so a car seen from one side can have its box center offset from the true center (up to 1.9 m even for a perfect segmentation of the ground-truth boxes).
-- The weakest tracklet is parked van #3, matched in 70 of 107 frames (0.654). Pedestrians are mostly missed (6 of 22 boxes, two tracklets); the cause has not been diagnosed. No parameter was tuned against these numbers.
-- On average 31.6 detections per sweep in that region match no ground-truth box (maximum 53). This is not a false-positive rate: the tracklets label only a few object types in front of the car, so unlabeled objects count as unmatched. Precision is evaluated in Phase 4.
-- Time per sweep for the detection stages (the sweep's file read excluded), on an Apple M5 Pro in Docker (linux/arm64): 95th percentile 49.3–52.1 ms over three runs (mean about 42 ms), against a 75 ms bar and the 100 ms live period. Live, with the publisher and bridge sharing the CPU: about 55 ms (the whole callback about 60 ms), and 2 of 678 sweeps were skipped in the recorded run. Timing varies by machine and is not part of the committed samples.
-- The recall gate in `./scripts/verify.sh` is 0.8 and the measured value is 0.823 (12 box-frames of margin). Results are byte-identical per CPU architecture; on a different architecture (for example amd64) a float-level difference could in principle move a few frames, and this has not been tested there.
+- The mean distance between matched centers is 0.54 m (90th percentile 1.39 m). Boxes are axis-aligned and built from the points the sensor sees, so a car seen from one side can have its box center offset from the true center (up to 1.9 m even for a perfect segmentation of the ground-truth boxes).
+- The weakest tracklet is parked van #3, matched in 76 of 107 frames (0.710). The local ground tiles helped it only a little; its misses are still clusters merged into something larger than a van, and I have not diagnosed what it merges with. Pedestrians are mostly missed (6 of 22 boxes, two tracklets); the cause has not been diagnosed. No parameter was tuned against these numbers.
+- On average 32.0 detections per sweep in that region match no ground-truth box (maximum 54); the ground tiles did not change this. This is not a false-positive rate: the tracklets label only a few object types in front of the car, so unlabeled objects count as unmatched. Precision is evaluated in Phase 4.
+- Time per sweep for the detection stages (the sweep's file read excluded), on an Apple M5 Pro in Docker (linux/arm64): 95th percentile 49.7–50.4 ms over three runs (mean about 45 ms), against a 75 ms bar and the 100 ms live period. Pinned to a single core the 95th percentile was 64 ms. Live, with the publisher and bridge sharing the CPU: about 48 ms (the whole callback about 53 ms), and no sweep was skipped in the recorded run (678 of 678). Timing varies by machine and is not part of the committed samples.
+- The recall gate in `./scripts/verify.sh` is 0.8 and the measured value is 0.908 (56 box-frames of margin). Results are byte-identical per CPU architecture; on a different architecture (for example amd64) a float-level difference could in principle move a few frames, and this has not been tested there.
 
 ## Verify
 

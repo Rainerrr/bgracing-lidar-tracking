@@ -24,6 +24,10 @@ class Params:
     ransac_iters: int
     ransac_dist: float
     ransac_min_normal_z: float
+    ground_tile_size: float
+    ground_tile_band: float
+    ground_tile_min_points: int
+    ground_tile_trim: float
     dbscan_eps: float
     dbscan_min_samples: int
     cluster_min_points: int

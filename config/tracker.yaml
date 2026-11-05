@@ -15,6 +15,10 @@ obstacle_tracker_node:
     ransac_iters: 100
     ransac_dist: 0.2            # m, plane inlier distance
     ransac_min_normal_z: 0.9    # accept only near-horizontal planes (|n_z| > this)
+    ground_tile_size: 10.0      # m; local ground plane per tile, refined from the global plane
+    ground_tile_band: 0.6       # m; tile candidates lie within this height of the global plane
+    ground_tile_min_points: 30  # voxels a tile needs to fit its own plane (else it keeps the global one)
+    ground_tile_trim: 0.15      # m; tile fit is trimmed to voxels this close to its plane
     dbscan_eps: 0.6             # m, clustering on (x, y)
     dbscan_min_samples: 8
     cluster_min_points: 10      # voxelized non-ground points per cluster
