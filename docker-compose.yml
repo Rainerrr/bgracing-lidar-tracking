@@ -1,0 +1,13 @@
+services:
+  publisher:
+    build: { context: ., dockerfile: publisher/Dockerfile.publisher }
+    init: true
+    environment: [ROS_DOMAIN_ID=42]
+    volumes: ["./data:/data:ro", "./config:/config:ro"]
+  processor:
+    build: { context: ., dockerfile: processor/Dockerfile.processor }
+    init: true
+    environment: [ROS_DOMAIN_ID=42]
+    volumes: ["./data:/data:ro", "./config:/config:ro", "./output:/output"]
+    ports: ["8765:8765"]
+    depends_on: [publisher]

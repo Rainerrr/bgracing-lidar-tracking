@@ -1,0 +1,8 @@
+kitti_lidar_publisher:
+  ros__parameters:
+    data_dir: /data
+    drive: 2011_09_26_drive_0005
+    rate_hz: 10.0
+    loop: true
+    start_frame: 0
+    end_frame: -1  # -1 = last frame

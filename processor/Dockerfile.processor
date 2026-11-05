@@ -1,0 +1,20 @@
+# Pinned by digest (ros:jazzy-ros-base-noble, Ubuntu 24.04, amd64 + arm64).
+FROM ros:jazzy-ros-base-noble@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-numpy \
+        python3-scipy \
+        python3-sklearn \
+        python3-matplotlib \
+        ros-jazzy-sensor-msgs-py \
+        ros-jazzy-tf2-ros \
+        ros-jazzy-foxglove-bridge \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV ROS_HOME=/tmp/ros
+WORKDIR /app
+COPY processor/ /app/processor/
+COPY scripts/ /app/scripts/
+
+# /ros_entrypoint.sh (from the base image) sources /opt/ros/jazzy/setup.bash.
+CMD ["ros2", "launch", "/app/processor/processor.launch.py"]
