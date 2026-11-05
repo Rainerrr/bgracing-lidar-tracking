@@ -9,8 +9,9 @@ BGRacing Autonomous home assignment: a two-container ROS 2 Jazzy pipeline that r
 ```bash
 ./scripts/download_kitti.sh                     # fetch the drive into ./data
 docker compose up --build                       # run the pipeline
-# Foxglove desktop app → Open connection → ws://localhost:8765
 ```
+
+Then open the Foxglove web app at <https://app.foxglove.dev> in Chrome, Edge or Firefox (free account required), choose Open connection → Foxglove WebSocket → `ws://localhost:8765`, and set the 3D panel's display frame to `velodyne`. Safari and Brave with Shields on can block the local connection.
 
 ## Credits
 

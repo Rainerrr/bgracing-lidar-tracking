@@ -41,7 +41,7 @@ Every choice below favors a grader running `docker compose up` on an unknown mac
 | Clustering | scikit-learn DBSCAN | Standard, well documented, easy to defend |
 | Ground removal | RANSAC plane fit in numpy (~30 lines) | No open3d dependency (wheel and ARM issues); you can explain every line |
 | Assignment | `scipy.optimize.linear_sum_assignment` | Optimal one-to-one matching in one call |
-| Viewer (default) | Foxglove via `ros-jazzy-foxglove-bridge`, port 8765 | Browser-based on any OS; no X11 or GUI in Docker |
+| Viewer (default) | Foxglove web app (app.foxglove.dev) connected to `ros-jazzy-foxglove-bridge`, port 8765 | Browser-based on any OS; no X11, GUI or viewer install; needs a free Foxglove login |
 | Viewer (optional) | RViz2 config file for Linux users | Some reviewers prefer it; costs nothing to include |
 | Network | Default compose bridge network, shared `ROS_DOMAIN_ID` | DDS discovery works inside one compose network; host mode behaves differently on Docker Desktop |
 | Config | ROS 2 parameter YAML per node | Tuning without rebuilding; parameters documented in one place |
@@ -166,6 +166,22 @@ Graders get a live 3D view in their browser and a set of static files that need 
 ### Live view (Foxglove)
 
 `foxglove_bridge` runs inside Container B and exposes `ws://localhost:8765`. Open Foxglove in a browser, connect to that address, and import the committed layout `viz/foxglove_layout.json`. The layout sets the fixed frame to `world`, so the ego car visibly drives through a static scene and parked cars stay still. It shows the raw and filtered clouds, boxes, arrows and labels, plus a plot panel of ego speed. Linux users can instead run RViz2 with `viz/tracker.rviz`.
+
+**Viewer is the Foxglove web app** (https://app.foxglove.dev). Nothing is installed besides Docker. The bridge is only a WebSocket server; the browser is the client.
+
+Steps for reviewers (also in the README):
+
+1. Run `docker compose up --build` and wait for the processor to log that `foxglove_bridge` advertised its channels.
+2. Open https://app.foxglove.dev in **Chrome, Edge or Firefox** and sign in. A free Foxglove account is required.
+3. Choose Open connection → Foxglove WebSocket → `ws://localhost:8765`.
+4. Import the layout `viz/foxglove_layout.json` (Layout menu → Import from file).
+
+Browser caveats to document under troubleshooting:
+
+- Safari and Brave (with Shields on) can block a secure page from opening `ws://localhost`. Use Chrome, Edge or Firefox, or turn Shields off for the site.
+- If the 3D panel is empty, set the display frame to `velodyne` (Phase 0) or `world` (from Phase 2).
+- Reviewers who don't want an account can use the Foxglove desktop app against the same address.
+- The README ships a GIF and sample screenshots in `docs/` so the result is visible even if the live view can't be opened.
 
 ### Static outputs
 
@@ -352,6 +368,7 @@ Cut in this order: the DBSCAN sweep, then the ablations, then the RViz config. N
 | Processing exceeds 100 ms | Timing log, dropped frames | Larger voxels, tighter ROI, fewer RANSAC iterations; lower `rate_hz` |
 | Ego pose looks wrong | Static objects drift in the world view | Plot the OXTS path alone first; check the calibration direction (IMU → velo vs velo → IMU) |
 | Velocities are noisy | Arrows flicker | Raise `r_pos`, require more hits before confirming, use box center rather than mean |
+| Foxglove web app can't reach the bridge | Connection fails or the 3D panel is empty | Use Chrome/Edge/Firefox; disable Brave Shields; confirm `ws://localhost:8765` is mapped (`docker compose ps`); fall back to the desktop app or the committed GIF and screenshots |
 | Walls or bushes tracked as obstacles | Large or oddly shaped boxes | Tighten size filters; require a minimum height |
 
 ### Stretch goals
