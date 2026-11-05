@@ -9,5 +9,6 @@ services:
     init: true
     environment: [ROS_DOMAIN_ID=42]
     volumes: ["./data:/data:ro", "./config:/config:ro", "./output:/output"]
-    ports: ["8765:8765"]
+    ports: ["127.0.0.1:8765:8765"]  # bridge has no auth: localhost only
+    stop_signal: SIGINT  # ros2 launch shuts its nodes down cleanly on SIGINT, not on SIGTERM
     depends_on: [publisher]

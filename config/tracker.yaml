@@ -1,4 +1,4 @@
-# Tracker parameters are added in Phase 1; see docs/spec.md for the defaults.
+# Tracker parameters are added from Phase 2 on; see docs/spec.md for the defaults.
 obstacle_tracker_node:
   ros__parameters:
     output_dir: /output

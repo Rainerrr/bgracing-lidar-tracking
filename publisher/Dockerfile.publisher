@@ -8,7 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ENV ROS_HOME=/tmp/ros
+# core/ (shared data layer + pose math) is importable as `core`; ROS's setup.bash keeps /app on PYTHONPATH.
+ENV PYTHONPATH=/app
 WORKDIR /app
+COPY core/ /app/core/
 COPY publisher/ /app/publisher/
 
 # /ros_entrypoint.sh (from the base image) sources /opt/ros/jazzy/setup.bash.

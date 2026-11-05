@@ -10,6 +10,6 @@ def generate_launch_description():
             executable="foxglove_bridge",
             parameters=[{"port": 8765, "address": "0.0.0.0"}],
         ),
-        # Phase 0: replaced by obstacle_tracker_node in Phase 1.
+        # Live check of the publisher's stream (Phase 1); replaced by obstacle_tracker_node in Phase 2.
         ExecuteProcess(cmd=["python3", "/app/processor/cloud_probe.py"], output="screen"),
     ])
