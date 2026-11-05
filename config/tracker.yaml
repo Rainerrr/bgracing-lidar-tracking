@@ -1,4 +1,24 @@
-# Tracker parameters are added from Phase 2 on; see docs/spec.md for the defaults.
+# Parameters for obstacle_tracker_node and scripts/run_offline.py (one source, see docs/spec.md).
+# Every key is required; a missing or unknown key is an error that names it.
 obstacle_tracker_node:
   ros__parameters:
+    data_dir: /data
+    drive: 2011_09_26_drive_0005
     output_dir: /output
+    report_every_n: 50          # live: write metrics.json every N processed frames
+    seed: 42                    # RANSAC stream is seeded by [seed, stamp_ns]
+    roi_x: [-40.0, 40.0]        # m, velodyne frame
+    roi_y: [-20.0, 20.0]
+    roi_z: [-3.0, 2.0]
+    ego_box: [2.5, 1.5]         # drop |x| < a and |y| < b (the ego car)
+    voxel_size: 0.15            # m; one grid-center point per occupied voxel
+    ransac_iters: 100
+    ransac_dist: 0.2            # m, plane inlier distance
+    ransac_min_normal_z: 0.9    # accept only near-horizontal planes (|n_z| > this)
+    dbscan_eps: 0.6             # m, clustering on (x, y)
+    dbscan_min_samples: 8
+    cluster_min_points: 10      # voxelized non-ground points per cluster
+    max_length: 7.0             # m, oriented (min-area rectangle)
+    max_width: 3.0              # m, oriented
+    min_height: 0.3             # m, z extent
+    max_height: 3.0

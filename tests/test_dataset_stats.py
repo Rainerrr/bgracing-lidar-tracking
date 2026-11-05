@@ -54,7 +54,14 @@ def test_two_runs_are_byte_identical(two_real_runs):
 def test_json_has_every_listed_quantity(two_real_runs):
     stats = json.loads((two_real_runs[0] / "dataset_stats.json").read_text())
     assert REQUIRED_KEYS <= stats.keys()
-    assert not any("stage" in k for k in stats), "per-stage share belongs to Phase 2"
+    stages = stats["stage_points"]
+    order = ["raw", "roi", "voxel", "non_ground", "clustered"]  # pipeline order; the JSON itself is key-sorted
+    assert set(stages) == set(order)
+    means = [stages[k]["mean"] for k in order]
+    assert means == sorted(means, reverse=True), "each stage keeps no more points than the one before"
+    assert stages["raw"]["share_of_raw"] == 1.0 and all(0.0 < v["share_of_raw"] <= 1.0 for v in stages.values())
+    assert stages["raw"]["series"] == stats["points_per_frame"]["series"]
+    assert all(len(v["series"]) == 154 for v in stages.values()) and sum(stats["ground_status_counts"].values()) == 154
     assert stats["frames"] == 154 and stats["ground_truth"] == "present"
     assert stats["duration_s"] == pytest.approx(15.80, abs=0.01)
     assert stats["mean_rate_hz"] == pytest.approx(9.68, abs=0.05)
@@ -69,10 +76,10 @@ def test_json_has_every_listed_quantity(two_real_runs):
 
 
 @pytest.mark.parametrize("with_gt", [True, False])
-def test_figure_panels_are_labeled(make_drive, with_gt):
+def test_figure_panels_are_labeled(make_drive, params, with_gt):
     module = load_script()
     data_dir, drive = make_drive(n=3, points=8, tracklets_xml=TRACKLET_XML if with_gt else None)
-    fig = module.build_figure(module.compute_stats(data_dir, drive))
+    fig = module.build_figure(module.compute_stats(data_dir, drive, params))
     axes = fig.get_axes()
     assert len(axes) == 6
     for ax in axes:

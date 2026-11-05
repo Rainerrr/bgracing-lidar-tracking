@@ -163,11 +163,11 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 
 1. **Reset check.** If the stamp went backward, clear all tracks and increment `pass`. This handles the dataset loop. Phase 3 decides how a large forward gap is handled: the v2 rule of resetting on gaps over 1 s would also fire after a processing stall.
 2. **Region of interest.** Keep x in [-40, 40] m, y in [-20, 20] m and z in [-3, 2] m. Drop the box around the ego car (`|x| < 2.5 m`, `|y| < 1.5 m`).
-3. **Voxel downsample.** Keep one point per 0.15 m voxel by rounding to a grid and using `np.unique`. This cuts about 120k points to roughly 15–25k.
-4. **Ground removal (RANSAC, seeded).** Fit a plane from 3 random points, 100 iterations. Count inliers within 0.2 m and accept only near-horizontal planes (`|normal z| > 0.9`, about 25.8° of tilt or less). Remove the inliers of the best plane.
+3. **Voxel downsample.** Keep one point per occupied 0.15 m voxel, placed at the voxel's grid center, using `np.unique` on packed integer voxel keys. The result does not depend on point order. This cuts about 120k points to roughly 30k (Phase 2 measured a mean of 31.9k).
+4. **Ground removal (RANSAC, seeded).** Fit a plane from 3 random points, 100 iterations. Count inliers within 0.2 m, take the best plane, and accept it only if it is near-horizontal (`|normal z| > 0.9`, about 25.8° of tilt or less); remove its inliers. If it is not accepted, the frame is marked `no_plane` and nothing is removed. (Filtering candidates by tilt before taking the best was tried in Phase 2 and rejected: noisy normals of a 30° plane passed and 42–73 % of it was removed.)
 5. **Clustering.** Run DBSCAN on the (x, y) coordinates only, with eps 0.6 m and min_samples 8. Clustering in 2D is faster and avoids splitting objects vertically.
-6. **Cluster filtering.** Keep clusters with at least 10 points, length ≤ 7 m, width ≤ 3 m and height between 0.3 and 3 m. This removes walls, buildings and vegetation.
-7. **Detections.** For each cluster, compute the box center (more stable than the mean of points) and the axis-aligned extents. Transform centers to the world frame with the paired ego pose, unless `ego_compensation` is off.
+6. **Cluster filtering.** Keep clusters with at least 10 voxelized points, an *oriented* length ≤ 7 m and width ≤ 3 m (the minimum-area rectangle of the cluster's (x, y) footprint, one voxel added to each side) and a z extent between 0.3 and 3 m. This removes walls, buildings and vegetation. Axis-aligned extents were rejected in Phase 2: the ego turns about 75°, so they reject 37–46 % of real vans even with perfect segmentation.
+7. **Detections.** For each cluster, compute the axis-aligned box in the velodyne frame: center (the midpoint of the voxel bounds, more stable than the mean of points) and extents dx, dy, dz. In Phase 3, transform centers to the world frame with the paired ego pose, unless `ego_compensation` is off.
 8. **Prediction.** Advance each track's Kalman filter by Δt from the header stamps.
 9. **Association.** Build a cost matrix of distances between predicted track positions and detections. Set costs above a 2.0 m gate to infinity, then solve with `linear_sum_assignment`. With `association: greedy`, use nearest neighbor instead (ablation only).
 10. **Update and lifecycle.** Matched tracks get a Kalman update. Unmatched detections start tentative tracks. A track is confirmed after 3 hits and deleted after 5 consecutive misses.
@@ -183,7 +183,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 | Topic | Type | Frame | Contents |
 |---|---|---|---|
 | `/perception/filtered_points` | `PointCloud2` | velodyne | Points after ROI, downsampling and ground removal |
-| `/perception/bounding_boxes` | `MarkerArray` | world | `LINE_LIST` wireframe per confirmed track, colored by state |
+| `/perception/bounding_boxes` | `MarkerArray` | velodyne in Phase 2, world from Phase 3 | `LINE_LIST` wireframe per detection (per confirmed track from Phase 3, colored by state), plus a `TEXT_VIEW_FACING` label with its size and point count |
 | `/perception/obstacle_vectors` | `MarkerArray` | world | `ARROW` from box center along (vx, vy), length = speed × 0.5 s |
 | `/perception/track_labels` | `MarkerArray` | world | `TEXT_VIEW_FACING`: track ID, state as text, and speed in km/h |
 
@@ -196,12 +196,16 @@ Every `MarkerArray` begins with a `DELETEALL` marker, so deleted tracks don't le
 - `voxel_size: 0.15`
 - `ransac_iters: 100`
 - `ransac_dist: 0.2`
-- `seed`
+- `ransac_min_normal_z: 0.9`
+- `seed: 42`
 - `dbscan_eps: 0.6`
 - `dbscan_min_samples: 8`
 - `cluster_min_points: 10`
 - `max_length: 7.0`
 - `max_width: 3.0`
+- `min_height: 0.3`
+- `max_height: 3.0`
+- `data_dir`, `drive`
 - `gate_m: 2.0`
 - `confirm_hits: 3`
 - `max_misses: 5`
@@ -247,9 +251,11 @@ Written to the mapped `./output` volume every `report_every_n` frames and on shu
 
 | File | Contents | Phase |
 |---|---|---|
-| `dataset_stats.png` | Histograms and per-frame counts from the stats script | 1 (per-stage share in 2) |
-| `dataset_stats.json` | The same statistics as numbers (the README quotes it; the checked artifact) | 1 (per-stage share in 2) |
-| `metrics.json` | Frames expected, processed and dropped; mean and p95 processing time; track counts; seed and parameters | 2 (track counts in 3) |
+| `dataset_stats.png` | Histograms, per-stage point counts and per-frame counts from the stats script | 1 (per-stage counts in 2) |
+| `dataset_stats.json` | The same statistics as numbers (the README quotes it; the checked artifact) | 1 (per-stage counts in 2) |
+| `metrics.json` | Frames expected, processed and dropped; mean and p95 processing time (detect scope, plus the whole callback live); stage means; ground-status counts; platform; seed and parameters; track counts from Phase 3. Not byte-stable (timing): never hashed or committed | 2 (track counts in 3) |
+| `detections.csv`, `frames.csv` | Per-frame detection rows (`frame, stamp_ns, x, y, z, dx, dy, dz, n_points`, velodyne frame) and stage counts with `ground_status`. The live node writes the same rows plus a leading `pass` column | 2 |
+| `detection_recall.json` | Car+Van recall, per class and per Car/Van tracklet, matched center error, unmatched detections. Deterministic; a sample is committed in `docs/samples/` | 2 |
 | `tracks.csv` | Every confirmed track state per frame (contract above) | 3 |
 | `obstacle_tracking_report.png` | Top-down world-frame map: the ego path, each confirmed track's trajectory colored by ID, and velocity arrows at the last position. Static tracks are grey and named in a legend. | 3 |
 | `evaluation.md` | Metrics table and the no-ego ablation from the evaluation script | 4 |
@@ -306,11 +312,14 @@ bgracing-lidar-tracking/
 │   └── kitti_lidar_publisher.py
 ├── processor/
 │   ├── Dockerfile.processor
+│   ├── config.py               # ROS-free: parameter contract (Phase 2)
+│   ├── perception.py           # ROS-free: steps 2-7 incl. RANSAC (Phase 2)
+│   ├── matching.py             # ROS-free: Hungarian GT matching, recall summary (Phase 2)
+│   ├── records.py              # ROS-free: file formats, writers, live/offline comparers (Phase 2)
+│   ├── markers.py              # box markers (Phase 2)
 │   ├── obstacle_tracker_node.py
-│   ├── ground.py               # RANSAC
-│   ├── tracker.py              # Kalman + Hungarian + lifecycle
-│   ├── markers.py
-│   ├── report.py               # matplotlib PNG
+│   ├── tracker.py              # Kalman + Hungarian + lifecycle (Phase 3)
+│   ├── report.py               # matplotlib PNG (Phase 3)
 │   └── processor.launch.py     # tracker + foxglove_bridge
 ├── config/
 │   ├── publisher.yaml
@@ -319,6 +328,8 @@ bgracing-lidar-tracking/
 │   ├── download_kitti.sh
 │   ├── verify.sh               # build + publisher smoke import + pytest (Phase 1)
 │   ├── dataset_stats.py
+│   ├── run_offline.py          # offline runner (Phase 2)
+│   ├── live_check.py           # live marker and parity checks (Phase 2)
 │   └── evaluate.py
 ├── viz/
 │   └── foxglove_layout.json
@@ -461,35 +472,36 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 **In scope**
 
-- The ROS-free perception core: pipeline steps 2–7 in the velodyne frame, with seeded RANSAC.
-- The offline runner (detections).
-- The live node replaces the probe. It publishes the filtered cloud and box markers, and every `MarkerArray` starts with `DELETEALL`.
+- The ROS-free perception core: pipeline steps 2–7 in the velodyne frame, with seeded RANSAC (`processor/perception.py`; `core/` stays numpy-only).
+- The offline runner (`scripts/run_offline.py`, detections and recall).
+- The live node replaces the probe. It publishes the filtered cloud and box markers (velodyne frame until Phase 3), writes the same detection files as the offline runner, and every `MarkerArray` starts with `DELETEALL`.
 - Per-frame timing and a dropped-frame count go into `metrics.json`.
-- Per-stage point counts are added to the dataset stats.
+- Per-stage point counts are added to the dataset stats (computed by the same perception core).
 - A ground-truth matching function (Hungarian assignment with a 2.0 m gate), reused by Phase 4.
 
 **Exit criteria**
 
 - E2.1 **Unit tests on synthetic clouds:**
-  - flat ground plus one car-sized box gives one detection at the right center;
-  - ground tilted 20° is removed, while ground tilted 30° is not accepted as ground;
+  - flat ground plus one car-sized box gives one detection within 0.15 m of the right center;
+  - ground tilted 20° and 24° is removed, while ground tilted 30° is not accepted as ground (at every one of 20 stamps; 27° is below the resolution of voxel-snapped three-point normals and is not gated);
   - an empty cloud, or one with fewer than 8 points, gives zero detections and no crash;
-  - a 20 m wall is filtered out;
+  - a 20 m wall is filtered out, also at 45°, while a car-sized box at 45° survives (the oriented size filter);
   - two boxes 0.5 m apart behave as the test documents (eps 0.6 merges them).
-- E2.2 **Offline recall** against ground truth: cars and vans, front half of the ROI, velodyne frame, 2.0 m gate, all 154 frames. Report per class with object counts, against **T?** (candidates: 0.7 / 0.8 / 0.9).
-- E2.3: two offline runs produce identical detections.
-- E2.4: offline p95 time per frame ≤ **T?** on the dev machine (this spec: 100 ms; sensor period ≈ 103 ms). A live 10 Hz run reports its dropped-frame count.
-- E2.5: live, every `MarkerArray` begins with `DELETEALL`, and the box count equals the detection count for that stamp. A Foxglove screenshot shows the boxes.
+- E2.2 **Offline recall** against ground truth: cars and vans, front half of the ROI, velodyne frame, one-to-one Hungarian matching on 2D centers with a 2.0 m gate, all 154 frames (denominator: 520 Car+Van box-frames). **Car+Van recall ≥ 0.8** (decided Nov 5; perfect-segmenter ceiling with the oriented filter 0.992). Reported per class and per Car/Van tracklet with object counts; Pedestrian and Cyclist are small samples and not gated.
+- E2.3: two offline runs produce byte-identical detection, stage and recall files (per CPU architecture).
+- E2.4: offline p95 time per frame for steps 2–7 **≤ 75 ms** on the dev machine (Apple M5 Pro, Docker arm64; nearest-rank over 154 frames, file reads excluded, three runs each passing). Live clouds arrive every 100 ms of wall time (the publisher's 10 Hz timer). A live run reports its dropped-frame count next to Phase 1's transport baseline (about 2 % lost); not gated.
+- E2.5: live, every `MarkerArray` begins with `DELETEALL`, and the `LINE_LIST` count equals the detection count for that stamp. A Foxglove screenshot shows the boxes.
+- E2.6 **Parity** (added in the Phase 2 spec): for every frame processed live, the live detection and stage rows equal the offline rows exactly (same machine; at least 140 distinct frames compared).
 
 **Failure paths owned:** zero points after the ROI, zero ground inliers, fewer than 3 points for RANSAC, and the processor starting before the publisher or before DDS discovery completes.
 
 **Frozen at exit:**
 
-- The detection record: center, l/w/h and point count, in the velodyne frame.
-- The per-stage counts.
-- How the offline runner is invoked and where it writes.
+- The detection record: center x, y, z, extents dx, dy, dz along the velodyne axes, and voxel count `n_points`, in the velodyne frame (oriented length and width are filter quantities only).
+- The per-stage counts (`raw, roi, voxel, non_ground, clustered`) and `ground_status` (`ok`, `no_plane`, `too_few_points`).
+- How the offline runner is invoked (`docker compose run --rm --no-deps processor python3 /app/scripts/run_offline.py`) and where it writes (`/output/offline/`, never the live folder).
 
-**Reviewer-visible if the project stopped here:** boxes around obstacles in Foxglove, plus a recall number.
+**Reviewer-visible if the project stopped here:** boxes around obstacles in Foxglove, plus a recall number (README Detection section, `docs/samples/detection_recall.json`).
 
 ### Phase 3: Tracking
 
@@ -677,10 +689,14 @@ Only after Phase 6:
 - RANSAC is seeded.
 - The report PNG moves to Phase 3, because it's a world-frame map.
 - The sensor rate is ≈ 9.7 Hz.
+- The size filter uses oriented extents (Phase 2).
+- Ground is accepted only if the *best* plane is near-horizontal (Phase 2).
 
 **Open:**
 
 - Does the form allow resubmission? If yes, submit at the end of Phase 5 and again after Phase 6. If no, submit once, after Phase 6 or in the deadline buffer.
 - The remaining open items are listed in their phases: Phase 3 (forward gaps), Phase 5 (GIF), Phase 6 (greedy definition).
+
+**Decided in the Phase 2 spec (Nov 5, 2026):** the size filter measures oriented length and width (rejected: oriented boxes everywhere, a wider axis-aligned width, keeping it as written); E2.2 bar Car+Van recall ≥ 0.8 (rejected: 0.9, 0.7); E2.4 bar p95 ≤ 75 ms (rejected: 100 ms, 50 ms); a new E2.6 live/offline parity criterion (rejected: leaving it to E3.4). Security re-check: not triggered (no new package, no port change). Details are in `docs/specs/phase-2-detection/FEATURE_SPEC.md`, which is a local file.
 
 **Decided in the Phase 1 spec (Nov 5, 2026):** the world frame is ENU with the first OXTS position as origin (rejected: the first full IMU pose); the E1.2 bar is 1.2 m (rejected: 1.5 m); the publisher keeps its 10 Hz timer and E1.5 checks the stamp-derived rate (rejected: pacing by stamps); the bridge port is bound to `127.0.0.1` now (rejected: waiting for Phase 5). Details are in `docs/specs/phase-1-foundations/FEATURE_SPEC.md`, which is a local file.

@@ -8,6 +8,8 @@ Runs without ROS and without the publisher:
 The JSON is the checked artifact: sorted keys, fixed histogram edges and rounded
 floats, so two runs give byte-identical files. If tracklet_labels.xml is missing,
 the stats still run and say "ground_truth": "missing".
+
+Phase 2 adds the per-stage point counts, computed by the same perception core the live node uses.
 """
 import argparse
 import hashlib
@@ -22,8 +24,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from core import kitti, poses  # noqa: E402
+from processor import config, perception  # noqa: E402
 
 DEFAULT_DRIVE = "2011_09_26_drive_0005"
+DEFAULT_CONFIG = "/config/tracker.yaml"
+STAGE_LABELS = {"raw": "raw", "roi": "after ROI", "voxel": "after voxel", "non_ground": "after ground removal",
+                "clustered": "in kept clusters"}
 RANGE_EDGES = np.arange(0.0, 100.0 + 1e-9, 2.0)  # metres from the sensor (3D); data max is 80 m
 REFLECTANCE_EDGES = np.round(np.arange(0.0, 1.0 + 1e-9, 0.05), 2)
 CLASS_ORDER = ("Car", "Van", "Truck", "Pedestrian", "Person_sitting", "Cyclist", "Tram", "Misc")
@@ -39,19 +45,25 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest() if Path(path).is_file() else None
 
 
-def compute_stats(data_dir, drive_name):
+def compute_stats(data_dir, drive_name, params):
     drive = kitti.load_drive(data_dir, drive_name)
     n = drive.n_frames
     stamps_s = (drive.stamps_ns - drive.stamps_ns[0]) / 1e9
     periods = np.diff(stamps_s)
 
     counts = np.zeros(n, dtype=np.int64)
+    stage_series = {k: np.zeros(n, dtype=np.int64) for k in perception.STAGES}
+    ground_status = {}
     range_hist = np.zeros(len(RANGE_EDGES) - 1, dtype=np.int64)
     refl_hist = np.zeros(len(REFLECTANCE_EDGES) - 1, dtype=np.int64)
     beyond = 0
     for i, path in enumerate(drive.sweep_paths):
         pts = kitti.load_sweep(path)
         counts[i] = len(pts)
+        result = perception.detect(pts, int(drive.stamps_ns[i]), params)  # same code as the live node
+        for k in perception.STAGES:
+            stage_series[k][i] = result.stages[k]
+        ground_status[result.ground_status] = ground_status.get(result.ground_status, 0) + 1
         rng = np.linalg.norm(pts[:, :3].astype(np.float64), axis=1)
         range_hist += np.histogram(rng, bins=RANGE_EDGES)[0]
         beyond += int(np.count_nonzero(rng > RANGE_EDGES[-1]))
@@ -79,6 +91,11 @@ def compute_stats(data_dir, drive_name):
         "ego_speed_mps": {"source": "OXTS hypot(vn, ve)", "min": r(speed.min(), 3), "mean": r(speed.mean(), 3),
                           "max": r(speed.max(), 3), "series": [r(s, 3) for s in speed]},
         "time_s": [r(t, 4) for t in stamps_s],
+        "stage_points": {k: {"mean": r(v.mean(), 1), "min": int(v.min()), "max": int(v.max()),
+                             "share_of_raw": r(v.sum() / counts.sum(), 4), "series": v.tolist()}
+                         for k, v in stage_series.items()},
+        "ground_status_counts": dict(sorted(ground_status.items())),
+        "perception_seed": params.seed,
     }
 
     try:
@@ -120,6 +137,8 @@ def build_figure(stats):
         f"Points per frame  mean {ppf['mean']:,.0f}",
         f"                  min {ppf['min']:,}, max {ppf['max']:,}",
         f"Ego speed         {speed['min']:.1f}-{speed['max']:.1f} m/s, mean {speed['mean']:.1f}",
+        "Points kept (share of raw):",
+        *[f"  {STAGE_LABELS[k]:<21}{v['share_of_raw'] * 100:5.1f} %" for k, v in stats["stage_points"].items()],
     ]
     if stats["ground_truth"] == "present":
         lines.append(f"GT tracklets      {sum(stats['gt_tracklets_by_class'].values())}, "
@@ -131,10 +150,15 @@ def build_figure(stats):
                        transform=ax_sum.transAxes, linespacing=1.5)
     text.set_in_layout(False)  # keep the text panel from squeezing the charts
 
-    ax_pts.set_title("Points per frame")
-    ax_pts.plot(np.arange(stats["frames"]), np.array(stats["points_per_frame"]["series"]) / 1e3, "-", color="0.2")
+    ax_pts.set_title("Points per frame after each pipeline stage")
+    for k, (stage, info) in enumerate(stats["stage_points"].items()):
+        ax_pts.plot(np.arange(stats["frames"]), np.maximum(info["series"], 1), LINE_STYLES[k % 4], marker=MARKERS[k % 8],
+                    markevery=20, markersize=4, label=STAGE_LABELS[stage])
+    ax_pts.set_yscale("log")
+    ax_pts.set_ylim(2e3, 1.5e6)  # headroom above the data for the legend
+    ax_pts.legend(loc="upper center", ncol=2, fontsize=8, title="stage (line style)", title_fontsize=8)
     ax_pts.set_xlabel("frame (index, ≈0.103 s apart)")
-    ax_pts.set_ylabel("points (thousands)")
+    ax_pts.set_ylabel("points (count, log scale)")
 
     edges = np.array(stats["range_hist"]["edges"])
     ax_rng.set_title("Range histogram (all frames)")
@@ -189,10 +213,11 @@ def main(argv=None):
     ap.add_argument("--data-dir", default="/data")
     ap.add_argument("--drive", default=DEFAULT_DRIVE)
     ap.add_argument("--out-dir", default="/output")
+    ap.add_argument("--config", default=DEFAULT_CONFIG, help="perception parameters (per-stage counts)")
     args = ap.parse_args(argv)
     try:
-        stats = compute_stats(args.data_dir, args.drive)
-    except kitti.DataError as exc:
+        stats = compute_stats(args.data_dir, args.drive, config.load_params(args.config))
+    except (kitti.DataError, config.ConfigError) as exc:
         print(f"dataset_stats: {exc}", file=sys.stderr)
         return 1
     for path in write_outputs(stats, args.out_dir):

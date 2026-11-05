@@ -1,0 +1,161 @@
+{
+ "car_van": {
+  "matched": 428,
+  "recall": 0.8231,
+  "total": 520
+ },
+ "center_error_m": {
+  "mean": 0.5573,
+  "n": 582,
+  "p90": 1.4447
+ },
+ "drive": "2011_09_26_drive_0005",
+ "frames": 154,
+ "gate_m": 2.0,
+ "ground_truth": "present",
+ "params": {
+  "cluster_min_points": 10,
+  "data_dir": "/data",
+  "dbscan_eps": 0.6,
+  "dbscan_min_samples": 8,
+  "drive": "2011_09_26_drive_0005",
+  "ego_box": [
+   2.5,
+   1.5
+  ],
+  "max_height": 3.0,
+  "max_length": 7.0,
+  "max_width": 3.0,
+  "min_height": 0.3,
+  "output_dir": "/output",
+  "ransac_dist": 0.2,
+  "ransac_iters": 100,
+  "ransac_min_normal_z": 0.9,
+  "report_every_n": 50,
+  "roi_x": [
+   -40.0,
+   40.0
+  ],
+  "roi_y": [
+   -20.0,
+   20.0
+  ],
+  "roi_z": [
+   -3.0,
+   2.0
+  ],
+  "seed": 42,
+  "voxel_size": 0.15
+ },
+ "per_class": {
+  "Car": {
+   "matched": 210,
+   "recall": 0.8468,
+   "small_sample": false,
+   "total": 248,
+   "tracklets": 9
+  },
+  "Cyclist": {
+   "matched": 148,
+   "recall": 0.961,
+   "small_sample": true,
+   "total": 154,
+   "tracklets": 1
+  },
+  "Pedestrian": {
+   "matched": 6,
+   "recall": 0.2727,
+   "small_sample": true,
+   "total": 22,
+   "tracklets": 2
+  },
+  "Van": {
+   "matched": 218,
+   "recall": 0.8015,
+   "small_sample": false,
+   "total": 272,
+   "tracklets": 3
+  }
+ },
+ "per_tracklet": {
+  "0": {
+   "cls": "Van",
+   "matched": 124,
+   "recall": 0.9051,
+   "total": 137
+  },
+  "10": {
+   "cls": "Car",
+   "matched": 23,
+   "recall": 0.7667,
+   "total": 30
+  },
+  "11": {
+   "cls": "Car",
+   "matched": 20,
+   "recall": 0.8333,
+   "total": 24
+  },
+  "13": {
+   "cls": "Car",
+   "matched": 14,
+   "recall": 0.875,
+   "total": 16
+  },
+  "14": {
+   "cls": "Car",
+   "matched": 22,
+   "recall": 0.7857,
+   "total": 28
+  },
+  "3": {
+   "cls": "Van",
+   "matched": 70,
+   "recall": 0.6542,
+   "total": 107
+  },
+  "4": {
+   "cls": "Car",
+   "matched": 9,
+   "recall": 0.8182,
+   "total": 11
+  },
+  "5": {
+   "cls": "Car",
+   "matched": 33,
+   "recall": 0.9167,
+   "total": 36
+  },
+  "6": {
+   "cls": "Car",
+   "matched": 33,
+   "recall": 0.9167,
+   "total": 36
+  },
+  "7": {
+   "cls": "Car",
+   "matched": 26,
+   "recall": 0.7879,
+   "total": 33
+  },
+  "8": {
+   "cls": "Van",
+   "matched": 24,
+   "recall": 0.8571,
+   "total": 28
+  },
+  "9": {
+   "cls": "Car",
+   "matched": 30,
+   "recall": 0.8824,
+   "total": 34
+  }
+ },
+ "seed": 42,
+ "unmatched_detections_in_region": {
+  "note": "detections in the evaluation region with no ground-truth match; not necessarily false",
+  "per_frame_max": 53,
+  "per_frame_mean": 31.6104,
+  "total": 4868
+ }
+}

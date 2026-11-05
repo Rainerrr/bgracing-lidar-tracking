@@ -16,6 +16,7 @@ from core import kitti
 
 DATA_DIR = Path(os.environ.get("KITTI_DATA_DIR", "/data"))
 DRIVE = "2011_09_26_drive_0005"
+TRACKER_CONFIG = Path(os.environ.get("TRACKER_CONFIG", "/config/tracker.yaml"))
 
 
 def pytest_configure(config):
@@ -112,3 +113,47 @@ def make_drive(tmp_path):
         return tmp_path, DRIVE
 
     return build
+
+
+@pytest.fixture(scope="session")
+def params():
+    from processor import config
+    try:
+        return config.load_params(TRACKER_CONFIG)
+    except config.ConfigError as exc:
+        pytest.fail(f"{exc}. Run through docker compose so ./config is mounted at /config.", pytrace=False)
+
+
+# ---------------------------------------------------------------- synthetic clouds (Phase 2)
+
+def plane_patch(x0, x1, y0, y1, z0=-1.7, tilt_deg=0.0, step=0.1):
+    """Dense plane patch; z = z0 + y * tan(tilt), i.e. tilted about the x axis."""
+    xs, ys = np.meshgrid(np.arange(x0, x1, step), np.arange(y0, y1, step))
+    zs = z0 + ys * np.tan(np.radians(tilt_deg))
+    return np.stack([xs.ravel(), ys.ravel(), zs.ravel()], axis=1)
+
+
+def box_surface(cx, cy, z_bottom, l, w, h, yaw_deg=0.0, step=0.1):
+    """Points on the top and four side faces of an l x w x h box (l along its own x axis)."""
+    u = np.arange(-l / 2, l / 2 + 1e-9, step)
+    v = np.arange(-w / 2, w / 2 + 1e-9, step)
+    z = np.arange(0.0, h + 1e-9, step)
+    top = [(a, b, h) for a in u for b in v]
+    long_sides = [(a, s * w / 2, c) for a in u for c in z for s in (-1, 1)]
+    short_sides = [(s * l / 2, b, c) for b in v for c in z for s in (-1, 1)]
+    pts = np.array(top + long_sides + short_sides)
+    t = np.radians(yaw_deg)
+    rot = np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+    pts[:, :2] = pts[:, :2] @ rot.T + (cx, cy)
+    pts[:, 2] += z_bottom
+    return pts
+
+
+def wall(x0, y0, x1, y1, z_bottom=-1.7, height=2.5, step=0.1):
+    """Vertical wall from (x0, y0) to (x1, y1)."""
+    n = max(int(np.hypot(x1 - x0, y1 - y0) / step), 1)
+    t = np.linspace(0.0, 1.0, n + 1)
+    z = np.arange(0.0, height + 1e-9, step)
+    xs, zs = np.meshgrid(x0 + (x1 - x0) * t, z)
+    ys, _ = np.meshgrid(y0 + (y1 - y0) * t, z)
+    return np.stack([xs.ravel(), ys.ravel(), zs.ravel() + z_bottom], axis=1)
