@@ -26,8 +26,48 @@ jobs:
       - name: Download the drive (README step 1)
         run: ./scripts/download_kitti.sh
 
-      - name: Platform
-        run: uname -m
+      - name: Platform (E5.2)
+        run: |
+          uname -m
+          docker compose build
+          for svc in publisher processor; do
+            echo "== $svc"
+            docker compose run --rm --no-deps --entrypoint bash "$svc" -c 'grep PRETTY_NAME /etc/os-release; python3 --version'
+          done
 
       - name: verify.sh (build, smoke import, tests, sample byte comparison)
         run: ./scripts/verify.sh
+
+      # The reviewer's evaluation command, then the committed sample must match byte for byte (E5.1).
+      - name: evaluate.py and diff against docs/samples (E5.1)
+        run: |
+          docker compose run --rm --no-deps processor python3 /app/scripts/evaluate.py
+          diff output/evaluation.md docs/samples/evaluation.md && echo "evaluation.md matches the sample"
+
+      # Headless live run: publisher + processor on the compose bridge network, then a clean stop (E5.9, E3.6).
+      - name: Live run, stop, check the output files (E5.9)
+        run: |
+          docker compose up --build -d
+          for i in $(seq 1 60); do
+            docker compose logs processor 2>&1 | grep -q "processed=100 " && break
+            sleep 3
+          done
+          docker compose logs processor 2>&1 | grep -E "processed=100 |foxglove|advertis" | head -5
+          docker compose exec -T processor bash -c 'source /opt/ros/jazzy/setup.bash && ros2 topic list' | tee topics.txt
+          grep -q /perception/ego_vehicle topics.txt
+          grep -q /perception/bounding_boxes topics.txt
+          docker compose down
+          docker compose run --rm --no-deps processor python3 /app/scripts/live_check.py files
+
+      # The host user (the runner, not root) can read and delete everything the containers wrote (E5.4).
+      - name: Host user can read and delete output/ (E5.4)
+        run: |
+          id
+          ls -lnR output | head -40
+          test -z "$(find output -type f ! -readable)"
+          find output -mindepth 1 ! -name .gitkeep -delete
+          test -z "$(find output -mindepth 1 ! -name .gitkeep)" && echo "output/ is empty again"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color | tail -150
