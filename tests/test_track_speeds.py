@@ -1,10 +1,7 @@
 """E3.2 parked speeds and E3.3 moving speeds on the real drive (offline, 154 frames), with their negative
 controls and determinism. Bars from phase-3 FEATURE_SPEC D1/D2, defined in processor.track_scoring.
 Fails, never skips, without ./data."""
-import dataclasses
 import hashlib
-
-import pytest
 
 from processor import track_scoring
 from scripts import run_offline
@@ -16,17 +13,6 @@ HASHED = ("tracks.csv", "tracking_speeds.json")
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-@pytest.fixture(scope="module")
-def runs(tmp_path_factory, drive, params):
-    variants = {
-        "on": (params, 0),
-        "on_again": (params, 0),
-        "other_seed": (dataclasses.replace(params, seed=params.seed + 1), 0),
-        "no_ego": (dataclasses.replace(params, ego_compensation=False), 0),
-    }
-    return {name: run_offline.run(p, tmp_path_factory.mktemp(name), data_dir=DATA_DIR) for name, (p, _) in variants.items()}
 
 
 def test_the_parked_and_moving_sets_are_the_e1_2_fixture():

@@ -17,6 +17,7 @@ from core import kitti
 DATA_DIR = Path(os.environ.get("KITTI_DATA_DIR", "/data"))
 DRIVE = "2011_09_26_drive_0005"
 TRACKER_CONFIG = Path(os.environ.get("TRACKER_CONFIG", "/config/tracker.yaml"))
+SAMPLES_DIR = Path(os.environ.get("SAMPLES_DIR", "/samples"))  # docs/samples, mounted read-only by scripts/verify.sh
 
 
 def pytest_configure(config):
@@ -122,6 +123,20 @@ def params():
         return config.load_params(TRACKER_CONFIG)
     except config.ConfigError as exc:
         pytest.fail(f"{exc}. Run through docker compose so ./config is mounted at /config.", pytrace=False)
+
+
+@pytest.fixture(scope="session")
+def runs(tmp_path_factory, drive, params):
+    """Four offline runs on the real drive, shared by the Phase 3 and Phase 4 tests (session scope: built once)."""
+    import dataclasses
+    from scripts import run_offline
+    variants = {
+        "on": params,
+        "on_again": params,
+        "other_seed": dataclasses.replace(params, seed=params.seed + 1),
+        "no_ego": dataclasses.replace(params, ego_compensation=False),
+    }
+    return {name: run_offline.run(p, tmp_path_factory.mktemp(name), data_dir=DATA_DIR) for name, p in variants.items()}
 
 
 # ---------------------------------------------------------------- synthetic clouds (Phase 2)

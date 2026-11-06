@@ -2,7 +2,7 @@
 
 BGRacing Autonomous home assignment: a two-container ROS 2 Jazzy pipeline that replays a KITTI raw LiDAR drive, detects obstacles, and tracks them in a world frame. See [docs/spec.md](docs/spec.md) for the full spec.
 
-> Work in progress (Phase 3: tracking). The publisher streams the point cloud, the ego odometry and the `world → velodyne` transform; the processor detects obstacles, tracks them in the world frame with ego-motion-compensated velocities, and scores the speeds against the ground truth. The full evaluation tables come in Phase 4.
+> Work in progress (Phase 4: evaluation). The publisher streams the point cloud, the ego odometry and the `world → velodyne` transform; the processor detects obstacles, tracks them in the world frame with ego-motion-compensated velocities, and one command scores the result against the ground truth, including the run without ego compensation (see [Evaluation](#evaluation)).
 
 ## Run
 
@@ -146,10 +146,51 @@ The bar is 0.5 m/s per object. `./scripts/verify.sh` gates both tables and check
 **Live.** The live node gives byte-for-byte the same tracks as the offline tracker fed the same sweeps: checked over 3 passes (33,315 track rows), including a pass with a dropped sweep. On the dev machine the whole live callback, file writes included, took 59 ms at the 95th percentile, against the 100 ms sweep period; the tracking step itself takes under 2 ms.
 
 **Limitations.**
-- About 74 confirmed tracks per sweep, most of them unlabelled static objects (poles, bushes, wall pieces). They are honest tracks, not errors, but some of them drift enough to be labelled moving; precision is evaluated in Phase 4.
+- About 74 confirmed tracks per sweep, most of them unlabelled static objects (poles, bushes, wall pieces). They are honest tracks, not errors, but some of them drift enough to be labelled moving; the [Evaluation](#evaluation) section measures how many.
 - Walking pedestrians are labelled `static` (see the motion state). Pedestrians are also mostly missed by detection (recall 0.27).
 - Box sizes in `tracks.csv` (`l, w, h`) are the detection's extents along the sensor's axes, so they change as the car turns.
 - The van's error reaches 1.0 m/s at the 90th percentile, at 30–44 m where it is seen from behind and partly.
+
+## Evaluation
+
+One command, with no publisher and no Foxglove, runs the offline pipeline twice (with and without ego compensation), scores both runs against the KITTI tracklets and writes `output/evaluation.md` (about 16 s on the dev machine). The committed copy is [`docs/samples/evaluation.md`](docs/samples/evaluation.md); the tables below are quoted from it.
+
+```bash
+docker compose run --rm --no-deps processor python3 /app/scripts/evaluate.py
+```
+
+The file has six parts, each with a short "how to read this" note: a summary, what the pipeline produced, accuracy against the KITTI labels, physical consistency of the tracks the labels do not cover, the ablation, and the method. Two runs give byte-identical files on the same CPU architecture (verified on arm64, not tested on amd64). KITTI labels only cars, vans, pedestrians and cyclists, in front of the car, so the numbers are split by what judges them.
+
+**The main result: ego compensation.** This is the only number with a pass/fail bar, fixed before the first run. Static-object velocity RMSE (matched parked-car frames after the warm-up) is **0.653 m/s** with ego compensation and **5.348 m/s** without it: a ratio of **8.19**, against a bar of at least 3. Without the ego pose, 100 % of parked-car frames are labelled `moving` (277 of 277) instead of 1.6 % (5 of 311).
+
+**Accuracy on the labelled objects** (no bar by design; GT box-frames in the front half of the region):
+
+| Class | GT box-frames | Recall | Center error (m) |
+|---|---|---|---|
+| Car | 248 | 0.972 | 0.493 |
+| Van | 272 | 0.853 | 0.787 |
+| Cyclist (small sample) | 154 | 0.987 | 0.365 |
+| Pedestrian (small sample) | 22 | 0.182 | 0.076 |
+| **Overall** | 696 | 0.904 | 0.568 |
+
+Car+Van recall is 0.910 (473 of 520 box-frames; the detection recall of Phase 2 was 0.908). Parked objects are labelled `static` in 0.984 of their frames (306 of 311); moving objects are labelled `moving` in 0.981 (253 of 258). There are 6 ID switches, all on parked cars (#3, #6, #10, #13). The per-tracklet table, including #13 with its 9 scored frames, is in the sample.
+
+**Most tracks have no label, and that is expected.** Of the 238 tracks with a frame in the evaluation region, 18 match a KITTI tracklet and 220 never do. Only 0.112 of the in-region track-frames are explained by a label (629 of 5,624), which is a lower bound on how many tracks are real objects, not an error rate. Many of the unlabelled tracks are probably poles, signs, trunks, bushes or walls: obstacles by the processor's definition (non-ground points within size limits) that the tracklets do not contain. Nothing here classifies them, but they can still be checked by physics. Once ego motion is removed, a fixed object must stay still, as a labelled parked car does:
+
+| Tracks (at least 10 frames after the warm-up) | Scored (excluded as too short) | Median speed (m/s) | Median position spread (m) | Same, without ego compensation |
+|---|---|---|---|---|
+| Unlabelled | 127 (93) | 0.358 | 1.006 | 5.464 m/s, 7.689 m |
+| Parked-car reference | 12 (2) | 0.413 | 0.599 | 5.487 m/s |
+
+The unlabelled tracks have a similar median speed to the parked cars (0.358 against 0.413 m/s) but a larger position spread (1.006 against 0.599 m), and the two rows are not directly comparable, because the box center of a large object drifts more than that of a small one. This shows consistency, not correctness: a still track could equally be a wall segment or leftover ground, and the processor classifies nothing. Short tracks are excluded and counted, not hidden.
+
+**False-moving rate.** Of the in-region track-frames that match no label, 0.086 (338 of 3,925) are labelled `moving` after the warm-up (0.978 without ego compensation). This counts every in-region track-frame that matches no tracklet, including unmatched frames of tracks that match one in other frames (for example when the lead van is briefly missed), and it does not assume that unmatched objects are fixed. It is the baseline that any fix for tracks wrongly labelled `moving` has to beat; the cause fixes are future work.
+
+**Limitations.**
+- No bars except the ablation: recall, label coverage and the clutter numbers are reported, not judged, because bars are not set after the results are known.
+- Pedestrians are mostly missed (recall 0.182, 4 of 22 box-frames), and walkers read `static` by design.
+- The region test on tracks uses x and y only, because `tracks.csv` has no z.
+- Identical bytes across CPU architectures are not claimed.
 
 ## Verify
 
@@ -157,7 +198,7 @@ The bar is 0.5 m/s per object. `./scripts/verify.sh` gates both tables and check
 ./scripts/verify.sh
 ```
 
-This builds both images, checks the publisher image's imports, and runs the unit tests inside the processor image, including the Car+Van recall gate (≥ 0.8), the tracking speed gates (parked and moving tables above, each with a control that must fail without ego compensation) and the two-run determinism checks. It needs the drive in `./data`: the real-data tests fail (they never skip) without it.
+This builds both images, checks the publisher image's imports, and runs the unit tests inside the processor image, including the Car+Van recall gate (≥ 0.8), the tracking speed gates (parked and moving tables above, each with a control that must fail without ego compensation), the evaluation metric tests (hand-built cases, the 3× ablation gate with a control, an exact cross-check against the speed summary) and the two-run determinism checks. It also regenerates `evaluation.md` and the three JSON samples in `docs/samples/` and requires them to match byte for byte. Byte identity is verified on arm64 only: on another CPU, a small numeric difference in this comparison is possible and is not by itself a code defect. It needs the drive in `./data`: the real-data tests fail (they never skip) without it.
 
 ## Credits
 
