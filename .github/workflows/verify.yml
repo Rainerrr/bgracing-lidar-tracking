@@ -1,0 +1,33 @@
+name: verify
+
+# Reviewer flow on a real amd64 Linux runner: download the drive, build both images, run verify.sh.
+# No secrets are used and the token is read-only.
+on:
+  push:
+    branches: [phase-5-ship, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Cache the KITTI drive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: data/2011_09_26
+          key: kitti-2011_09_26_drive_0005-${{ hashFiles('scripts/download_kitti.sh') }}
+
+      - name: Download the drive (README step 1)
+        run: ./scripts/download_kitti.sh
+
+      - name: Platform
+        run: uname -m
+
+      - name: verify.sh (build, smoke import, tests, sample byte comparison)
+        run: ./scripts/verify.sh
