@@ -22,5 +22,8 @@ COPY processor/ /app/processor/
 COPY scripts/ /app/scripts/
 COPY tests/ /app/tests/
 
-# /ros_entrypoint.sh (from the base image) sources /opt/ros/jazzy/setup.bash.
+# /ros_entrypoint.sh (from the base image) sources /opt/ros/jazzy/setup.bash. umask 000 makes everything written to
+# the mounted /output (files 0666, folders 0777) readable and deletable by the host user, whatever its uid: the
+# container runs as root, so on a Linux host the files would otherwise be root-owned (E5.4).
+ENTRYPOINT ["/bin/sh", "-c", "umask 000 && exec /ros_entrypoint.sh \"$@\"", "sh"]
 CMD ["ros2", "launch", "/app/processor/processor.launch.py"]
