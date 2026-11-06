@@ -134,3 +134,34 @@ def test_marker_checker_needs_at_least_one_array(tmp_path):
 def test_marker_checker_flags_a_stamp_with_different_counts_across_passes(tmp_path):
     live = write_live(tmp_path, [(0, 0, 1000, result(), [det()]), (1, 0, 1000, result(), [det(), det(9, 9)])])
     assert "differ across passes" in rec.compare_markers([arr(1000, 1)], live)["problems"][0]["problem"]
+
+
+# ---------------------------------------------------------------- Phase 3: track parity and loop
+
+def rows(p, f, ids):
+    return [f"{p},{f},{1000 + f},{i},0.0000,0.0000,0.0000,0.0000,0.0000,static,1.0000,1.0000,1.0000" for i in ids]
+
+
+def test_track_parity_ok_and_control_a_removed_frame_fails():
+    processed = [(0, 5), (0, 6), (0, 7), (0, 8)]
+    live = {(0, 7): rows(0, 7, [1]), (0, 8): rows(0, 8, [1])}
+    by_pass = rec.tracks_by_pass(processed, live)
+    assert rec.compare_track_parity(by_pass, {0: rows(0, 7, [1]) + rows(0, 8, [1])})["ok"]
+    # E3.4 control: a replay missing one processed frame confirms later and differs
+    out = rec.compare_track_parity(by_pass, {0: rows(0, 8, [1])})
+    assert not out["ok"] and out["mismatched"][0]["first_difference_row"] == 0
+
+
+def test_loop_ok_on_wraps_and_flags_a_surviving_track():
+    processed = [(0, 152), (0, 153), (1, 0), (1, 1), (1, 2), (2, 0)]
+    live = {(1, 2): rows(1, 2, [1])}
+    assert rec.check_loop(processed, live) == {"passes": 3, "wraps": 2, "problems": [], "ok": True}
+    stale = dict(live)
+    stale[(1, 0)] = rows(1, 0, [7])  # E3.5 control: a track on the first frame of a pass
+    assert not rec.check_loop(processed, stale)["ok"]
+
+
+def test_loop_flags_a_pass_change_without_a_wrap_and_a_wrap_without_a_pass_change():
+    assert not rec.check_loop([(0, 10), (1, 11)], {})["ok"]
+    assert not rec.check_loop([(0, 10), (0, 3)], {})["ok"]
+    assert not rec.check_loop([(0, 10), (2, 0)], {})["ok"]

@@ -1,5 +1,5 @@
 """Parameter contract shared by the live node and the offline runner. ROS-free."""
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 import yaml
@@ -35,9 +35,22 @@ class Params:
     max_width: float
     min_height: float
     max_height: float
+    # Phase 3: tracking (docs/spec.md steps 8-11; defaults fixed before code, FEATURE_SPEC D8)
+    gate_m: float
+    confirm_hits: int
+    max_misses: int
+    q_accel: float
+    r_pos: float
+    v0_sigma: float
+    moving_speed: float
+    moving_sigma: float
+    ego_compensation: bool
+    association: str
+    warmup_frames: int
 
 
 _TYPES = {f.name: f.type for f in fields(Params)}
+CHOICES = {"association": ("hungarian", "greedy")}
 
 
 def _coerce(key, value):
@@ -47,9 +60,15 @@ def _coerce(key, value):
                 isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
             raise ConfigError(f"key '{key}' must be a list of 2 numbers, got {value!r}")
         return tuple(float(v) for v in value)
+    if typ is bool:
+        if not isinstance(value, bool):
+            raise ConfigError(f"key '{key}' must be true or false, got {value!r}")
+        return value
     if typ is str:
         if not isinstance(value, str):
             raise ConfigError(f"key '{key}' must be a string, got {value!r}")
+        if key in CHOICES and value not in CHOICES[key]:
+            raise ConfigError(f"key '{key}' must be one of {', '.join(CHOICES[key])}, got {value!r}")
         return value
     if typ is int:
         if isinstance(value, bool) or not isinstance(value, int):
@@ -80,3 +99,19 @@ def load_params(path):
     except (yaml.YAMLError, KeyError, TypeError) as exc:
         raise ConfigError(f"{path}: needs obstacle_tracker_node.ros__parameters ({exc})") from exc
     return params_from_dict(block)
+
+
+def apply_overrides(params, overrides):
+    """Params with 'key=value' overrides (values parsed as YAML, then checked like the file). CLI use."""
+    d = asdict(params)
+    for item in overrides or ():
+        key, sep, raw = item.partition("=")
+        if not sep:
+            raise ConfigError(f"override '{item}' must look like key=value")
+        if key not in _TYPES:
+            raise ConfigError(f"unknown key '{key}' in override")
+        try:
+            d[key] = yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"key '{key}': cannot parse override value {raw!r}") from exc
+    return params_from_dict(d)

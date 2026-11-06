@@ -1,0 +1,172 @@
+{
+ "drive": "2011_09_26_drive_0005",
+ "frames": 154,
+ "ground_truth": "present",
+ "method": {
+  "aggregation": "by tracklet",
+  "gt_velocity": "centered difference of world-frame GT centers over +-5 frames",
+  "matching": "per frame, Hungarian on 2D centers, gate 2.0 m, evaluation region",
+  "warmup_frames": 5
+ },
+ "moving": {
+  "bar_median_abs_error": 0.5,
+  "objects": {
+   "0": {
+    "cls": "Van",
+    "matched_frames": 103,
+    "median_abs_error": 0.2166,
+    "median_gt_speed": 4.7669,
+    "p90_abs_error": 0.9951,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "1": {
+    "cls": "Cyclist",
+    "matched_frames": 147,
+    "median_abs_error": 0.2359,
+    "median_gt_speed": 4.6176,
+    "p90_abs_error": 0.4748,
+    "share_moving": 1.0,
+    "small_sample": true
+   }
+  },
+  "pass": true
+ },
+ "params": {
+  "association": "hungarian",
+  "cluster_min_points": 10,
+  "confirm_hits": 3,
+  "data_dir": "/data",
+  "dbscan_eps": 0.6,
+  "dbscan_min_samples": 8,
+  "drive": "2011_09_26_drive_0005",
+  "ego_box": [
+   2.5,
+   1.5
+  ],
+  "ego_compensation": true,
+  "gate_m": 2.0,
+  "ground_tile_band": 0.6,
+  "ground_tile_min_points": 30,
+  "ground_tile_size": 10.0,
+  "ground_tile_trim": 0.15,
+  "max_height": 3.0,
+  "max_length": 7.0,
+  "max_misses": 5,
+  "max_width": 3.0,
+  "min_height": 0.3,
+  "moving_sigma": 2.0,
+  "moving_speed": 0.7,
+  "output_dir": "/output",
+  "q_accel": 1.0,
+  "r_pos": 0.5,
+  "ransac_dist": 0.2,
+  "ransac_iters": 100,
+  "ransac_min_normal_z": 0.9,
+  "report_every_n": 50,
+  "roi_x": [
+   -40.0,
+   40.0
+  ],
+  "roi_y": [
+   -20.0,
+   20.0
+  ],
+  "roi_z": [
+   -3.0,
+   2.0
+  ],
+  "seed": 42,
+  "v0_sigma": 5.0,
+  "voxel_size": 0.15,
+  "warmup_frames": 5
+ },
+ "parked": {
+  "bar_each": 0.7,
+  "bar_median_of_medians": 0.5,
+  "median_of_medians": 0.379,
+  "pass": true,
+  "tracklets": {
+   "10": {
+    "cls": "Car",
+    "matched_frames": 28,
+    "median_speed": 0.572,
+    "p90_speed": 1.4294,
+    "share_moving": 0.0714
+   },
+   "11": {
+    "cls": "Car",
+    "matched_frames": 16,
+    "median_speed": 0.5361,
+    "p90_speed": 0.7693,
+    "share_moving": 0.0
+   },
+   "13": {
+    "cls": "Car",
+    "matched_frames": 9,
+    "median_speed": 0.6602,
+    "p90_speed": 1.4862,
+    "share_moving": 0.0
+   },
+   "14": {
+    "cls": "Car",
+    "matched_frames": 19,
+    "median_speed": 0.1634,
+    "p90_speed": 0.3583,
+    "share_moving": 0.0
+   },
+   "3": {
+    "cls": "Van",
+    "matched_frames": 88,
+    "median_speed": 0.2547,
+    "p90_speed": 0.5623,
+    "share_moving": 0.0
+   },
+   "5": {
+    "cls": "Car",
+    "matched_frames": 34,
+    "median_speed": 0.5034,
+    "p90_speed": 1.613,
+    "share_moving": 0.0882
+   },
+   "6": {
+    "cls": "Car",
+    "matched_frames": 28,
+    "median_speed": 0.0879,
+    "p90_speed": 0.9352,
+    "share_moving": 0.0
+   },
+   "7": {
+    "cls": "Car",
+    "matched_frames": 33,
+    "median_speed": 0.2241,
+    "p90_speed": 0.799,
+    "share_moving": 0.0
+   },
+   "8": {
+    "cls": "Van",
+    "matched_frames": 22,
+    "median_speed": 0.5687,
+    "p90_speed": 0.7983,
+    "share_moving": 0.0
+   },
+   "9": {
+    "cls": "Car",
+    "matched_frames": 34,
+    "median_speed": 0.1133,
+    "p90_speed": 0.381,
+    "share_moving": 0.0
+   }
+  },
+  "worst": {
+   "id": 13,
+   "median_speed": 0.6602
+  }
+ },
+ "seed": 42,
+ "tracking_frame": "world",
+ "tracks": {
+  "confirmed": 417,
+  "rows": 11433
+ }
+}

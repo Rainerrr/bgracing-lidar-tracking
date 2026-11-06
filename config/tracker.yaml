@@ -26,3 +26,15 @@ obstacle_tracker_node:
     max_width: 3.0              # m, oriented
     min_height: 0.3             # m, z extent
     max_height: 3.0
+    # Phase 3: tracking. Defaults fixed before any tracking code ran (phase-3 FEATURE_SPEC D8).
+    gate_m: 2.0                 # m, association gate on predicted-to-detection distance
+    confirm_hits: 3             # hits before a track is confirmed (output and drawn)
+    max_misses: 5               # consecutive misses (missing frames included) that delete a track
+    q_accel: 1.0                # (m/s^2)^2, white-noise acceleration per axis
+    r_pos: 0.5                  # m, measurement standard deviation of a detection center
+    v0_sigma: 5.0               # m/s, initial velocity uncertainty (new tracks start at v = 0)
+    moving_speed: 0.7           # m/s; a confirmed track is "moving" if speed - moving_sigma * sigma_speed > this
+    moving_sigma: 2.0           # sigma_speed = filter velocity std along the direction of travel (decided Nov 6, D10)
+    ego_compensation: true      # false: track in the velodyne frame (the no-ego ablation)
+    association: hungarian      # hungarian | greedy (greedy is the Phase 6 ablation)
+    warmup_frames: 5            # evaluation only: frames after confirmation excluded from speed scoring

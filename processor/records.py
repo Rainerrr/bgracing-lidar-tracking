@@ -12,6 +12,7 @@ from pathlib import Path
 DETECTION_HEADER = "frame,stamp_ns,x,y,z,dx,dy,dz,n_points"
 FRAMES_HEADER = "frame,stamp_ns,raw,roi,voxel,non_ground,clustered,clusters_found,clusters_kept,ground_status"
 DELETEALL = 3  # visualization_msgs/Marker.DELETEALL
+TRACK_HEADER = "pass,frame,stamp_ns,track_id,x,y,vx,vy,speed,state,l,w,h"  # frozen at the end of Phase 3
 
 
 # ---------------------------------------------------------------- rows
@@ -25,6 +26,16 @@ def frames_row(frame, stamp_ns, result):
     s = result.stages
     return (f"{frame},{stamp_ns},{s['raw']},{s['roi']},{s['voxel']},{s['non_ground']},{s['clustered']},"
             f"{result.clusters_found},{result.clusters_kept},{result.ground_status}")
+
+
+def track_rows(pass_no, frame, stamp_ns, tracks):
+    """tracks.csv rows (contract in docs/spec.md): confirmed tracks of one frame, sorted by track_id.
+
+    x, y, vx, vy in the tracking frame (world, or velodyne with ego compensation off); l, w, h are the last
+    matched detection's extents along the velodyne axes. The same function formats live and offline rows.
+    """
+    return [f"{pass_no},{frame},{stamp_ns},{t.track_id},{t.x:.4f},{t.y:.4f},{t.vx:.4f},{t.vy:.4f},{t.speed:.4f},"
+            f"{t.state},{t.l:.4f},{t.w:.4f},{t.h:.4f}" for t in sorted(tracks, key=lambda t: t.track_id)]
 
 
 def csv_text(header, rows, pass_no=None):
@@ -153,3 +164,95 @@ def compare_markers(arrays, live):
         elif a["n_text"] != a["n_line_list"] or a["n_total"] != 1 + a["n_line_list"] + a["n_text"]:
             problems.append({"array": i, "stamp_ns": a["stamp_ns"], "problem": "markers are not DELETEALL + box + label per detection"})
     return {"arrays": len(arrays), "problems": problems, "ok": not problems and len(arrays) > 0}
+
+
+# ---------------------------------------------------------------- Phase 3 comparers (live checker)
+
+def read_live_tracks(tracks_csv):
+    """{(pass, frame): [tracks.csv row text, ...]} (rows keep their pass column)."""
+    out = {}
+    for line in Path(tracks_csv).read_text().splitlines()[1:]:
+        p, f = line.split(",", 2)[:2]
+        out.setdefault((int(p), int(f)), []).append(line)
+    return out
+
+
+def tracks_by_pass(processed, live_tracks):
+    """{pass: [rows in processing order]} for the processed (pass, frame) list."""
+    out = {}
+    for p, f in processed:
+        out.setdefault(p, []).extend(live_tracks.get((p, f), []))
+    return out
+
+
+def frames_by_pass(processed):
+    out = {}
+    for p, f in processed:
+        out.setdefault(p, []).append(f)
+    return out
+
+
+def compare_track_parity(live_by_pass, replay_by_pass):
+    """E3.4: per pass, the live tracks.csv rows equal the offline replay of the same frames, byte for byte."""
+    mismatched = []
+    for p in sorted(set(live_by_pass) | set(replay_by_pass)):
+        a, b = live_by_pass.get(p, []), replay_by_pass.get(p, [])
+        if a != b:
+            first = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
+            mismatched.append({"pass": p, "live_rows": len(a), "replay_rows": len(b), "first_difference_row": first,
+                               "live": a[first] if first < len(a) else None, "replay": b[first] if first < len(b) else None})
+    rows = sum(len(v) for v in live_by_pass.values())
+    return {"passes": len(live_by_pass), "rows": rows, "mismatched": mismatched, "ok": not mismatched and rows > 0}
+
+
+def check_loop(processed, live_tracks):
+    """E3.5: pass changes exactly at a wrap (frame index goes back), by +1; the first processed frame of every
+    pass has no confirmed track (a reset tracker needs confirm_hits frames), so no track survives a wrap.
+
+    Assumes confirm_hits >= 2 (it is 3): with 1, a fresh track would be confirmed on the first frame. A stale ID
+    later in a pass can't happen without a missed reset, and Tracker.step raises on a backward stamp that was
+    not preceded by reset()."""
+    problems = []
+    for (p0, f0), (p1, f1) in zip(processed, processed[1:]):
+        if p1 not in (p0, p0 + 1):
+            problems.append({"at": [p1, f1], "problem": f"pass jumps from {p0} to {p1}"})
+        elif p1 == p0 + 1 and f1 >= f0:
+            problems.append({"at": [p1, f1], "problem": "pass incremented without a wrap"})
+        elif p1 == p0 and f1 <= f0:
+            problems.append({"at": [p1, f1], "problem": "frame went back without a pass increment"})
+    firsts = {}
+    for p, f in processed:
+        firsts.setdefault(p, f)
+    for p, f in sorted(firsts.items()):
+        if live_tracks.get((p, f)):
+            problems.append({"at": [p, f], "problem": f"{len(live_tracks[(p, f)])} tracks on the first frame of the pass"})
+    return {"passes": len(firsts), "wraps": len(firsts) - 1, "problems": problems, "ok": not problems and bool(processed)}
+
+
+def compare_track_markers(arrays, live_frames, live_tracks):
+    """Track markers (Phase 3): every array starts with DELETEALL carrying the pass; boxes and labels: one per
+    confirmed track of that (pass, stamp); arrows: one per moving track.
+
+    arrays: [{"topic", "pass", "stamp_ns", "first_action", "n_line_list", "n_text", "n_arrow", "n_total"}].
+    live_frames: read_live_rows output (gives (pass, frame) -> stamp); live_tracks: read_live_tracks output.
+    """
+    counts = {}
+    for (p, f), (frames_text, _) in live_frames.items():
+        rows = live_tracks.get((p, f), [])
+        counts[(p, int(frames_text.split(",")[1]))] = (len(rows), sum(r.split(",")[9] == "moving" for r in rows))
+    want = {"/perception/bounding_boxes": ("n_line_list", 0), "/perception/track_labels": ("n_text", 0),
+            "/perception/obstacle_vectors": ("n_arrow", 1)}
+    problems, per_topic = [], {}
+    for i, a in enumerate(arrays):
+        per_topic[a["topic"]] = per_topic.get(a["topic"], 0) + 1
+        c = counts.get((a["pass"], a["stamp_ns"]))
+        field, which = want[a["topic"]]
+        if a["first_action"] != DELETEALL:
+            problems.append({"array": i, "topic": a["topic"], "problem": "does not begin with DELETEALL"})
+        elif c is None:
+            problems.append({"array": i, "topic": a["topic"], "problem": f"(pass {a['pass']}, stamp {a['stamp_ns']}) not processed live"})
+        elif a[field] != c[which] or a["n_total"] != 1 + c[which]:
+            problems.append({"array": i, "topic": a["topic"], "stamp_ns": a["stamp_ns"],
+                             "problem": f"{a[field]} markers ({a['n_total'] - 1} in all) but {c[which]} live tracks"})
+    return {"arrays": len(arrays), "per_topic": per_topic, "problems": problems,
+            "ok": not problems and len(per_topic) == 3}
