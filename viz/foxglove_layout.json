@@ -1,0 +1,142 @@
+{
+  "configById": {
+    "3D!1pipe0": {
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "frameId": "world",
+          "size": 100,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#4d4d4d",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "order": 1
+        }
+      },
+      "cameraState": {
+        "perspective": false,
+        "distance": 70,
+        "phi": 0,
+        "thetaOffset": 0,
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-position",
+      "followTf": "world",
+      "scene": {
+        "enableStats": false,
+        "backgroundColor": "#111111",
+        "transforms": {
+          "showLabel": false,
+          "editable": false,
+          "enablePreloading": false
+        }
+      },
+      "transforms": {
+        "frame:world": {
+          "visible": false
+        },
+        "frame:velodyne": {
+          "visible": false
+        }
+      },
+      "topics": {
+        "/sensor/lidar/raw_points": {
+          "visible": true,
+          "colorField": "intensity",
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "pointSize": 1.5,
+          "pointShape": "square",
+          "decayTime": 0
+        },
+        "/perception/filtered_points": {
+          "visible": true,
+          "colorField": "z",
+          "colorMode": "colormap",
+          "colorMap": "rainbow",
+          "pointSize": 3,
+          "pointShape": "square",
+          "decayTime": 0
+        },
+        "/perception/bounding_boxes": {
+          "visible": true
+        },
+        "/perception/obstacle_vectors": {
+          "visible": true
+        },
+        "/perception/track_labels": {
+          "visible": true
+        },
+        "/perception/ego_vehicle": {
+          "visible": true
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      },
+      "imageMode": {}
+    },
+    "Plot!1egospd": {
+      "title": "Ego speed (m/s, forward axis of the velodyne frame)",
+      "paths": [
+        {
+          "value": "/sensor/ego/odom.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "headerStamp"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 0,
+      "followingViewWidth": 20
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": "3D!1pipe0",
+    "second": "Plot!1egospd",
+    "direction": "column",
+    "splitPercentage": 78
+  }
+}

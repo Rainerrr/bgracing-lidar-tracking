@@ -14,7 +14,9 @@
  "gate_m": 2.0,
  "ground_truth": "present",
  "params": {
+  "association": "hungarian",
   "cluster_min_points": 10,
+  "confirm_hits": 3,
   "data_dir": "/data",
   "dbscan_eps": 0.6,
   "dbscan_min_samples": 8,
@@ -23,15 +25,22 @@
    2.5,
    1.5
   ],
+  "ego_compensation": true,
+  "gate_m": 2.0,
   "ground_tile_band": 0.6,
   "ground_tile_min_points": 30,
   "ground_tile_size": 10.0,
   "ground_tile_trim": 0.15,
   "max_height": 3.0,
   "max_length": 7.0,
+  "max_misses": 5,
   "max_width": 3.0,
   "min_height": 0.3,
+  "moving_sigma": 2.0,
+  "moving_speed": 0.7,
   "output_dir": "/output",
+  "q_accel": 1.0,
+  "r_pos": 0.5,
   "ransac_dist": 0.2,
   "ransac_iters": 100,
   "ransac_min_normal_z": 0.9,
@@ -49,7 +58,9 @@
    2.0
   ],
   "seed": 42,
-  "voxel_size": 0.15
+  "v0_sigma": 5.0,
+  "voxel_size": 0.15,
+  "warmup_frames": 5
  },
  "per_class": {
   "Car": {

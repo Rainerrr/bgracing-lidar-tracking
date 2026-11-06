@@ -28,6 +28,13 @@ fetch() { # url dest
   fi
 }
 
+for tool in curl unzip; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Missing host tool: $tool. Install it (Ubuntu/Debian: sudo apt install curl unzip; macOS: both ship with the OS or brew install $tool) and re-run." >&2
+    exit 1
+  }
+done
+
 mkdir -p "$DATA_DIR"
 cd "$DATA_DIR"
 

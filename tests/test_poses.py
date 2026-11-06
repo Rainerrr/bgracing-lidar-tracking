@@ -147,3 +147,29 @@ def test_real_ego_speed_matches_oxts(drive):
     oxts_speed = np.hypot(drive.oxts[:, poses.VN], drive.oxts[:, poses.VE])
     assert np.all(np.abs(np.linalg.norm(linear[:, :2], axis=1) - oxts_speed) < 0.3)
     assert 3.0 < oxts_speed.min() and oxts_speed.max() < 6.6
+
+
+# ---------------------------------------------------------------- Phase 3: carried pose path
+
+def test_quat_to_rot_inverts_rot_to_quat_on_every_branch():
+    for R in (np.eye(3), TILTED, poses.rotation_rpy(0.0, 0.0, np.pi), poses.rotation_rpy(np.pi, 0.1, 0.0),
+              poses.rotation_rpy(0.0, np.pi, 0.3), poses.rotation_rpy(0.3, -0.2, 2.9)):
+        assert np.allclose(poses.quat_to_rot(poses.rot_to_quat_xyzw(R)), R, atol=1e-12)
+
+
+def test_quat_to_rot_rejects_a_zero_quaternion():
+    with pytest.raises(ValueError):
+        poses.quat_to_rot([0.0, 0.0, 0.0, 0.0])
+
+
+def test_carried_pose_is_bit_identical_to_a_float64_message_round_trip(drive):
+    """The offline path (carried_pose) and the live path (odom fields -> pose_matrix) give the same bits."""
+    T_wv = poses.world_velo_poses(drive.oxts, drive.T_velo_imu)
+    for T in T_wv:
+        q = poses.rot_to_quat_xyzw(T[:3, :3])
+        msg = {"p": [float(v) for v in T[:3, 3]], "q": [float(v) for v in q]}  # what Odometry carries (float64)
+        live = poses.pose_matrix(msg["p"], msg["q"])
+        assert np.array_equal(live, poses.carried_pose(T))
+        # KITTI's calibration rotation is orthonormal only to ~5e-8, which a quaternion can't carry:
+        # measured max difference 5e-8 (2 um at 40 m). Live and offline both use the carried pose.
+        assert np.allclose(live, T, atol=1e-6)

@@ -161,7 +161,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 
 **Pipeline per frame:**
 
-1. **Reset check.** If the stamp went backward, clear all tracks and increment `pass`. This handles the dataset loop. Phase 3 decides how a large forward gap is handled: the v2 rule of resetting on gaps over 1 s would also fire after a processing stall.
+1. **Reset check.** If the stamp went backward, clear all tracks and increment `pass`. This handles the dataset loop. A forward gap never resets (decided in the Phase 3 spec): a gap of k missing frames counts as k misses for every track, so 5 or more retire them, and the Kalman filter predicts over the real stamp Δt. The v2 rule of resetting on gaps over 1 s was rejected because it also fires after a processing stall. A duplicate stamp (Δt = 0) is skipped and counted. Track IDs restart at 1 on each reset, so `(pass, track_id)` is the key.
 2. **Region of interest.** Keep x in [-40, 40] m, y in [-20, 20] m and z in [-3, 2] m. Drop the box around the ego car (`|x| < 2.5 m`, `|y| < 1.5 m`).
 3. **Voxel downsample.** Keep one point per occupied 0.15 m voxel, placed at the voxel's grid center, using `np.unique` on packed integer voxel keys. The result does not depend on point order. This cuts about 120k points to roughly 30k (Phase 2 measured a mean of 31.9k).
 4. **Ground removal (RANSAC, seeded).** Fit a plane from 3 random points, 100 iterations. Count inliers within 0.2 m, take the best plane, and accept it only if it is near-horizontal (`|normal z| > 0.9`, about 25.8° of tilt or less); remove its inliers. If it is not accepted, the frame is marked `no_plane` and nothing is removed. (Filtering candidates by tilt before taking the best was tried in Phase 2 and rejected: noisy normals of a 30° plane passed and 42–73 % of it was removed.) **Local ground tiles (decided Nov 6, Phase 2):** after an accepted global plane, the ground is refined per 10 × 10 m tile. Each tile fits its own least-squares plane to its voxels within 0.6 m of the global plane (trimmed twice to 0.15 m), and voxels within 0.2 m of the tile plane are removed as ground too. A tile with fewer than 30 candidates, a singular fit, or a plane failing the same tilt rule keeps the global result. One plane can't follow 80 m of road, and the band of ground left 0.2–0.4 m above it bridged cars to walls and bushes in the 2D clustering, so the size filter dropped the merged blob: measured, 72 of 92 missed Car/Van box-frames were such merges.
@@ -171,7 +171,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 8. **Prediction.** Advance each track's Kalman filter by Δt from the header stamps.
 9. **Association.** Build a cost matrix of distances between predicted track positions and detections. Set costs above a 2.0 m gate to infinity, then solve with `linear_sum_assignment`. With `association: greedy`, use nearest neighbor instead (ablation only).
 10. **Update and lifecycle.** Matched tracks get a Kalman update. Unmatched detections start tentative tracks. A track is confirmed after 3 hits and deleted after 5 consecutive misses.
-11. **Motion state.** A confirmed track with filtered speed above 0.7 m/s is "moving"; otherwise it is "static".
+11. **Motion state.** A confirmed track is "moving" only if it is confidently above 0.7 m/s: speed − 2σ > 0.7 m/s, where σ is the filter's velocity standard deviation along the direction of travel. Otherwise it is "static". (Decided during Phase 3: the plain speed rule labelled 197 of 417 tracks moving, mostly short clutter tracks whose box centers slide as the view changes. σ settles at 0.31 m/s, so the steady threshold is about 1.32 m/s and walkers are labelled static; their label still shows the speed.)
 12. **Publish and log.** Send markers and the filtered cloud, then append confirmed tracks to `tracks.csv`.
 
 **Kalman filter:** the state is `[x, y, vx, vy]` in the world frame, with a constant-velocity motion model and measurement `[x, y]`. Process noise `q_accel` and measurement noise `r_pos` are parameters. Velocity comes from the filter state, not from raw centroid differences, so partial views don't make arrows jump.
@@ -186,6 +186,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 | `/perception/bounding_boxes` | `MarkerArray` | velodyne in Phase 2, world from Phase 3 | `LINE_LIST` wireframe per detection (per confirmed track from Phase 3, colored by state), plus a `TEXT_VIEW_FACING` label with its size and point count |
 | `/perception/obstacle_vectors` | `MarkerArray` | world | `ARROW` from box center along (vx, vy), length = speed × 0.5 s |
 | `/perception/track_labels` | `MarkerArray` | world | `TEXT_VIEW_FACING`: track ID, state as text, and speed in km/h |
+| `/perception/ego_vehicle` | `MarkerArray` | velodyne | Added in Phase 5, display only: a translucent body box (4.6 × 1.8 × 1.5 m, approximate: the cloud has no returns on the body), a red sphere at the LiDAR origin, a forward arrow and a text label saying the size is approximate. It follows the car through the `world → velodyne` transform |
 
 Every `MarkerArray` begins with a `DELETEALL` marker, so deleted tracks don't leave ghosts. Per-frame processing time and the dropped-frame count go into `metrics.json`.
 
@@ -213,9 +214,12 @@ Every `MarkerArray` begins with a `DELETEALL` marker, so deleted tracks don't le
 - `gate_m: 2.0`
 - `confirm_hits: 3`
 - `max_misses: 5`
-- `q_accel`
-- `r_pos`
+- `q_accel: 1.0` ((m/s²)², per-axis white-noise acceleration)
+- `r_pos: 0.5` (m, measurement standard deviation)
+- `v0_sigma: 5.0` (m/s, initial velocity uncertainty; new tracks start at v = 0)
+- `warmup_frames: 5` (evaluation only: frames after confirmation excluded from speed scoring)
 - `moving_speed: 0.7`
+- `moving_sigma: 2.0` (confidence factor of the motion-state rule, step 11)
 - `ego_compensation: true`
 - `association: hungarian`
 - `report_every_n: 50`
@@ -227,7 +231,7 @@ Graders get a live 3D view in their browser and a set of static files that need 
 
 ### Live view (Foxglove)
 
-`foxglove_bridge` runs inside Container B and exposes `ws://localhost:8765`. Open Foxglove in a browser, connect to that address, and import the committed layout `viz/foxglove_layout.json`. The layout sets the display frame to `world`, so the ego car visibly drives through a static scene and parked cars stay still. It shows:
+`foxglove_bridge` runs inside Container B and exposes `ws://localhost:8765`. Open Foxglove in a browser, connect to that address, and import the committed layout `viz/foxglove_layout.json`. The layout sets the display frame to `world`, so the ego car visibly drives through a static scene and parked cars stay still. It hides the transform axes and links: Foxglove draws them at its own wall-clock time, not at the dataset stamp, so they don't follow the car (decided in the Phase 3 spec; publishing `/clock` was rejected). It shows:
 
 - the raw and filtered clouds;
 - boxes, arrows and labels;
@@ -261,10 +265,10 @@ Written to the mapped `./output` volume every `report_every_n` frames and on shu
 | `detections.csv`, `frames.csv` | Per-frame detection rows (`frame, stamp_ns, x, y, z, dx, dy, dz, n_points`, velodyne frame) and stage counts with `ground_status`. The live node writes the same rows plus a leading `pass` column | 2 |
 | `detection_recall.json` | Car+Van recall, per class and per Car/Van tracklet, matched center error, unmatched detections. Deterministic; a sample is committed in `docs/samples/` | 2 |
 | `tracks.csv` | Every confirmed track state per frame (contract above) | 3 |
-| `obstacle_tracking_report.png` | Top-down world-frame map: the ego path, each confirmed track's trajectory colored by ID, and velocity arrows at the last position. Static tracks are grey and named in a legend. | 3 |
-| `evaluation.md` | Metrics table and the no-ego ablation from the evaluation script | 4 |
+| `obstacle_tracking_report.png` | Top-down world-frame map: the ego path, each confirmed track's trajectory colored by ID, and velocity arrows at the last position. Static tracks are thin, dashed and grey, with one legend entry "static tracks (n = X), includes unlabelled objects"; each moving track is named by ID in the legend and labelled at its last position. Live: written on the stop signal only (a render takes hundreds of ms); offline: always. A sample is committed in `docs/samples/` | 3 |
+| `evaluation.md` | The six-part evaluation (summary, produced, KITTI labels, physical consistency, ablation, method) from `scripts/evaluate.py`. Deterministic per architecture; a sample is committed in `docs/samples/` | 4 |
 
-The report is written periodically, not only on exit, because `docker compose down` can kill the node before a clean shutdown handler runs. The node also catches SIGTERM and writes one final report.
+The CSV and JSON files are written periodically, not only on exit, because `docker compose down` can kill the node before a clean shutdown handler runs. On the stop signal (compose sends SIGINT; rclpy also handles SIGTERM) the node writes final versions of all files, including the PNG, atomically.
 
 ## Evaluation against ground truth
 
@@ -274,26 +278,33 @@ The report is written periodically, not only on exit, because `docker compose do
 
 1. Parse tracklets into per-frame boxes (center, size, yaw, class) in the velodyne frame. Map frames to stamps with `velodyne_points/timestamps.txt`.
 2. Transform ground-truth centers to the world frame with the same ego poses the publisher uses.
-3. Compute ground-truth velocity by differencing world-frame centers over consecutive frames, smoothed over 3 frames.
-4. Keep only ground truth **and tracks** inside the evaluation region: the processing ROI ∩ the front half (x ≥ 0 in the velodyne frame). KITTI tracklets exist only in front of the car, so without this filter correct tracks behind it would count as false positives.
-5. Per frame, match confirmed tracks to ground truth with Hungarian assignment on center distance, using a 2.0 m gate. This is the same matching function Phase 2 uses for detection recall.
+3. Compute ground-truth velocity as the centered difference of world-frame centers over ±5 frames (1 s). Decided in the Phase 3 spec: differencing over ±1 frame makes parked cars read 0.24–0.45 m/s from label jitter alone, against 0.16–0.25 m/s over ±5 frames.
+4. The evaluation region is the processing ROI ∩ the front half (x ≥ 0 in the velodyne frame). KITTI tracklets exist only in front of the car, so without it correct tracks behind the car would count against the tracker. Ground truth is tested on its velodyne center. Tracks are mapped back to velodyne with the frame's pose and tested on x and y only, because the frozen `tracks.csv` has no z (decided in the Phase 4 spec).
+5. Per frame, match confirmed tracks to ground truth with Hungarian assignment on center distance, using a 2.0 m gate. This is the same matching function Phase 2 uses for detection recall, applied to all confirmed tracks as in Phase 3; the region decides which track-frames count toward label coverage and the false-moving rate.
 
 ### Metrics
 
-Overall and per class. Per-class rows always show object counts; Pedestrian (n = 2) and Cyclist (n = 1) are flagged as small samples.
+Definitions fixed in the Phase 4 spec (Nov 6). The unit is the GT box-frame (the Car+Van denominator is 520). A GT object is **static** if its tracklet's world net speed is < 0.5 m/s (the 10 parked tracklets of E1.2), otherwise moving. The first `warmup_frames` (5) frames after a track's confirmation are excluded from velocity RMSE, static accuracy, moving-label recall, parked flicker and the false-moving rate, but not from recall, label coverage, center error or ID switches. A zero denominator prints `n/a`, naming it. Per-class rows show counts; Pedestrian (n = 2) and Cyclist (n = 1) are flagged as small samples.
 
 | Metric | Definition |
 |---|---|
-| Recall | Matched ground-truth objects ÷ all ground-truth objects in the evaluation region |
-| Precision | Matched tracks ÷ all confirmed tracks in the evaluation region |
-| Center error | Mean distance between matched track and ground-truth centers (m) |
-| Velocity RMSE | RMSE of (vx, vy) for matched pairs (m/s), reported separately for moving and static objects |
-| Static accuracy | Share of truly static objects (GT speed < 0.5 m/s) that the tracker labels "static" |
-| ID switches | Times a ground-truth object's matched track ID changes |
+| Recall | Matched GT box-frames ÷ GT box-frames in the evaluation region; overall, per class and per tracklet |
+| Label coverage (precision against labels) | Matched track-frames ÷ confirmed track-frames in the region; overall only (tracks have no class). A lower bound: KITTI labels only cars, vans, pedestrians and cyclists |
+| Center error | Mean distance between matched track and GT centers (m) |
+| Velocity RMSE | √(mean ‖v_track − v_GT‖²) over matched frames (m/s), static and moving separately |
+| Static accuracy / parked flicker | Share of matched static-GT frames labelled `static` / `moving` (complements) |
+| Moving-label recall | Share of matched moving-GT frames labelled `moving` (walkers read static by design, step 11) |
+| ID switches | Per tracklet, matched frames whose track ID differs from the previous matched track ID; unmatched gaps do not reset it |
+| False-moving rate | Share of in-region track-frames with no GT match that are labelled `moving` |
+| World stillness (no labels) | For unlabelled tracks (never matched) with ≥ 10 post-warm-up frames: median of per-track median speeds and median position spread (max distance from the mean world position), beside the same numbers for tracks matched to parked tracklets; scored and excluded counts shown. Consistency, not correctness |
+
+Only the ablation ratio is gated; every other metric is reported with "no bar by design".
+
+`evaluation.md` has six parts, each with a short "how to read this" note: summary; what the pipeline produced; accuracy against KITTI labels; physical consistency; ablation; method and reproducibility.
 
 ### Ablations
 
-- **No ego compensation (core, Phase 4).** Run with `ego_compensation: false` and report static-object velocity RMSE side by side with the compensated run. The jump in that error is the strongest single result in the project.
+- **No ego compensation (core, Phase 4).** Run with `ego_compensation: false` and report static-object velocity RMSE side by side with the compensated run. GT velocity is rotated into velodyne axes for that run (rotation only, no ego subtraction). **Gated: the no-ego RMSE is ≥ 3× the compensated value** (decided in the Phase 4 spec). The world-stillness numbers of unlabelled tracks are shown for both runs too, so the result does not depend on KITTI's labels. The jump in that error is the strongest single result in the project.
 - **Greedy matching (optional, Phase 6).** Run with `association: greedy`. The Phase 6 spec decides whether "greedy instead of Hungarian plus Kalman" also removes the Kalman filter.
 
 ### DBSCAN sweep (optional, Phase 6)
@@ -308,6 +319,7 @@ A grader runs three commands: download the data, `docker compose up`, then open 
 bgracing-lidar-tracking/
 ├── docker-compose.yml
 ├── README.md
+├── .github/workflows/verify.yml  # amd64 CI: download, build, verify, evaluate diff, live run, permissions (Phase 5)
 ├── core/                       # shared ROS-free code, copied into both images (Phase 1)
 │   ├── kitti.py                # data layer: sweeps, stamps, OXTS, calibration, tracklets
 │   └── poses.py                # OXTS → world poses, transforms, ego twist
@@ -322,8 +334,10 @@ bgracing-lidar-tracking/
 │   ├── records.py              # ROS-free: file formats, writers, live/offline comparers (Phase 2)
 │   ├── markers.py              # box markers (Phase 2)
 │   ├── obstacle_tracker_node.py
-│   ├── tracker.py              # Kalman + Hungarian + lifecycle (Phase 3)
-│   ├── report.py               # matplotlib PNG (Phase 3)
+│   ├── tracking.py             # ROS-free: Kalman + Hungarian + lifecycle + motion state (Phase 3)
+│   ├── track_scoring.py        # ROS-free: speed scoring against tracklets, reused by Phase 4 (Phase 3)
+│   ├── report.py               # ROS-free: matplotlib report PNG (Phase 3)
+│   ├── evaluation.py           # ROS-free: Phase 4 metrics, ablation gate and the evaluation.md renderer
 │   └── processor.launch.py     # tracker + foxglove_bridge
 ├── config/
 │   ├── publisher.yaml
@@ -337,7 +351,7 @@ bgracing-lidar-tracking/
 │   └── evaluate.py
 ├── viz/
 │   └── foxglove_layout.json
-├── tests/                      # pytest: data layer, pose math, RANSAC, perception, tracker, metrics
+├── tests/                      # pytest: data layer, pose math, RANSAC, perception, tracker, metrics, README guard (Phase 5)
 ├── docs/                       # this spec, sample outputs (docs/samples/) and screenshots for reviewers
 ├── data/                       # git-ignored
 └── output/                     # git-ignored
@@ -364,11 +378,11 @@ services:
     depends_on: [publisher]
 ```
 
-No `network_mode` is set, so both services share compose's default bridge network. Scripts run directly with `python3` after sourcing ROS. The launch file starts them with `ExecuteProcess`, which avoids building colcon packages. Both images copy `core/` and set `PYTHONPATH=/app`. Since Phase 1 the bridge port is bound to `127.0.0.1` only, because `foxglove_bridge` has no authentication.
+No `network_mode` is set, so both services share compose's default bridge network. Scripts run directly with `python3` after sourcing ROS. The launch file starts them with `ExecuteProcess`, which avoids building colcon packages. Both images copy `core/` and set `PYTHONPATH=/app`. Since Phase 1 the bridge port is bound to `127.0.0.1` only, because `foxglove_bridge` has no authentication. Since Phase 5 the processor image's entrypoint runs `umask 000` before the ROS entrypoint, so files and folders written to the mounted `/output` are deletable by the host user whatever its uid (the container runs as root).
 
 ### Commands for the README
 
-Final commands are fixed in Phase 5. Offline commands use `--no-deps` so they don't start the publisher.
+Fixed in Phase 5 and run in full on a fresh clone. Offline commands use `--no-deps` so they don't start the publisher.
 
 ```bash
 ./scripts/download_kitti.sh                     # fetch the drive into ./data
@@ -521,34 +535,36 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 - Output files:
   - `tracks.csv`;
   - `metrics.json` with track counts;
-  - the report PNG, with static tracks grey **and** named in a legend;
-  - all written periodically and on SIGTERM.
-- `viz/foxglove_layout.json`.
+  - the report PNG, with static tracks grey, dashed **and** counted in one legend entry, moving tracks named by ID;
+  - CSV and JSON written periodically, and every file on the stop signal (live PNG on the stop signal only).
+- `viz/foxglove_layout.json`, with transform links hidden.
+- Committed samples (moved up from Phase 4): the offline report PNG and a deterministic speed summary JSON in `docs/samples/`, and a README Tracking block quoted from them.
 - The offline runner produces tracks.
 - A live-vs-offline parity check.
 
 **Exit criteria**
 
 - E3.1 **Unit tests on synthetic tracks:**
-  - a constant-velocity target's speed converges to within **T?**;
+  - a noise-free 5 m/s target reads within **0.05 m/s** from frame 10; with 0.1 m position noise (fixed seed), the median error over frames 10–50 is **≤ 0.2 m/s**;
   - two crossing targets keep their IDs;
   - a track confirms on the 3rd hit and is deleted on the 5th miss;
-  - a backward stamp clears all tracks;
+  - a backward stamp clears all tracks; a forward gap of k frames adds k misses and never resets;
   - a duplicate stamp (Δt = 0) and an empty detection set are handled safely.
-- E3.2 **Parked objects:** offline, the tracks matched to the 10 parked tracklets have median speed ≤ **T?**. Static ground truth is defined as < 0.5 m/s. *Negative control:* with `ego_compensation: false`, the same tracks read roughly the ego speed (3.1–6.5 m/s).
-- E3.3 **Moving objects:** speed error for the lead van (≈ 5.7 m/s) and the cyclist (≈ 4.4 m/s) is ≤ **T?**.
-- E3.4 **Parity:** a live run with loop off and zero dropped frames produces the same `tracks.csv` as the offline run, within **T?**.
+- Scoring for E3.2 and E3.3: per frame, confirmed tracks are matched to GT in the evaluation region (Hungarian, 2.0 m gate, world-frame centers), aggregated by tracklet, excluding the first 5 frames after each track's confirmation.
+- E3.2 **Parked objects:** offline, for the 10 parked tracklets, the median of the per-tracklet median speeds is **≤ 0.5 m/s** and every tracklet's median is **≤ 0.7 m/s** (the `moving` threshold). Static ground truth is defined as < 0.5 m/s. *Negative control:* with `ego_compensation: false`, every parked tracklet's median reads ≥ 2.5 m/s (the ego drives at 3.1–6.5 m/s).
+- E3.3 **Moving objects:** for the lead van and the cyclist separately, the median |filtered speed − GT speed| over matched frames is **≤ 0.5 m/s**, with GT speed from the ±5-frame centered difference. Both accelerate (van about 4.3 → 8.0 m/s, net 5.74; cyclist 3.7 → 6.1, net 4.38), so the comparison is per frame. *Negative control:* with `ego_compensation: false` both objects fail the bar (amended during the build: a 2-frame pose shift did not fail, because a constant pose lag offsets positions, not velocities).
+- E3.4 **Parity:** the live node records the (pass, frame) sequence it processed; the offline tracker fed exactly that sequence produces byte-equal `tracks.csv` rows for every pass. Dropped frames and clean full passes are reported, not gated. (Changed in the Phase 3 spec from "loop off and zero dropped frames", which a ~2 % transport loss makes unreliable.)
 - E3.5 **Loop:** after the wrap from frame 153 to 0, the first frame of the new pass contains no track from the previous pass, and `pass` increments.
-- E3.6 **Shutdown:** `docker compose down` mid-run leaves complete, parseable `tracks.csv`, `metrics.json` and PNG within compose's stop timeout.
-- E3.7: the layout file loads in Foxglove with display frame `world` and shows the clouds, boxes, arrows, labels and an ego-speed plot (screenshot).
+- E3.6 **Shutdown:** `docker compose down` after at least 60 processed frames leaves complete, parseable `tracks.csv`, `metrics.json` and PNG within compose's stop timeout (`stop_grace_period: 10s`, set explicitly).
+- E3.7: the layout file loads in Foxglove with display frame `world`, transform links hidden, and shows the clouds, boxes, arrows, labels and an ego-speed plot (screenshot).
 
-**Failure paths owned:** a cloud with no matching odom stamp, zero detections, and a false reset after a processing stall.
+**Failure paths owned:** a cloud with no matching odom stamp (skipped and counted as `no_odom`, never posed locally), zero detections, a duplicate stamp, and a false reset after a processing stall.
 
 **Frozen at exit:** the `tracks.csv` schema, the `metrics.json` fields and the config switches.
 
 **Reviewer-visible if the project stopped here:** the core result. Parked cars read near 0, moving objects show their speed, and the PNG map shows tracks in the world frame.
 
-**Open for the phase spec:** whether a forward stamp gap resets tracks or only ages them through misses.
+**Resolved by the phase spec (Nov 6):** a forward stamp gap ages tracks by one miss per missing frame and never resets them (see step 1).
 
 ### Phase 4: Core evaluation (never cut)
 
@@ -558,18 +574,21 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 - `evaluate.py` per [Evaluation against ground truth](#evaluation-against-ground-truth), scoring the offline runner's tracks.
 - The no-ego-compensation ablation.
-- `evaluation.md`.
-- Sample outputs committed to `docs/`: the report PNG, the stats PNG and `evaluation.md`.
+- Two motion-state numbers, the baseline for the Phase 6 cause fixes: the false-moving rate (share of front-half track-frames with no GT match that are labelled `moving`, mostly poles, bushes and walls) and the parked flicker (share of matched parked-tracklet frames labelled `moving`; Phase 3 measured at most 9 %).
+- Moving-label recall and a label-free world-stillness check of unlabelled tracks (added in the Phase 4 spec).
+- `evaluation.md` in six parts with reading notes (see [Metrics](#metrics)).
+- Sample outputs committed to `docs/`: `evaluation.md`, and a regeneration check of the report PNG and speed summary that Phase 3 already committed. A README results block quoted from `evaluation.md`.
 
-**Exit criteria**
+**Exit criteria** (amended in the Phase 4 spec, Nov 6)
 
-- E4.1: one command, with no publisher and no Foxglove, regenerates `evaluation.md`. Two runs are byte-identical.
-- E4.2: every metric is finite, matched + missed equals the ground-truth count in the evaluation region, and per-class rows show object counts.
-- E4.3: the metric functions are unit-tested on hand-built cases: a perfect match, one miss, one false track and one ID switch.
-- E4.4: the no-ego ablation row reports static-object velocity RMSE side by side with the compensated run.
-- E4.5: the sample outputs in `docs/` match a fresh regeneration.
+- E4.1: one command, with no publisher and no Foxglove, regenerates `evaluation.md`. Two runs are byte-identical; the file has no timestamp, timing or platform text.
+- E4.2: every metric is finite or an explicit `n/a` naming its zero denominator; matched + missed equals the GT box-frames in the evaluation region (Car+Van 520); per-class and per-tracklet rows show counts; labelled + unlabelled tracks and scored + excluded tracks add up. The six parts and their reading notes are present, and no number is called a false positive.
+- E4.3: the metric functions are unit-tested on hand-built cases: a perfect match, one miss, one false track, one ID switch (also across a gap), a +1 m/s velocity bias, the warm-up scope, both tracking frames, the stillness check, and an empty `tracks.csv`.
+- E4.4: the no-ego ablation reports static-object velocity RMSE side by side with the compensated run, and the ratio is **≥ 3×** (gated). A control feeding the compensated rows as the no-ego run fails.
+- E4.5: `verify.sh` byte-compares `evaluation.md`, `tracking_speeds.json`, `tracking_speeds_no_ego.json` and `detection_recall.json` in `docs/samples/` against a fresh run; a missing sample fails. The report PNG's SHA-256 is recorded in evidence for the dev architecture.
+- E4.6: cross-check with Phase 3: the van and cyclist median speed error and each parked tracklet's median speed and moving share equal `tracking_speeds.json`.
 
-**Failure paths owned:** a missing tracklet file gives a clear error. An empty `tracks.csv` is reported as zero recall, not a crash.
+**Failure paths owned:** a missing tracklet file gives a clear error naming the download script and writes no partial `evaluation.md`. An empty `tracks.csv` is reported as zero recall and `n/a` label coverage, not a crash. Tracks with `pass ≠ 0` are rejected.
 
 **Reviewer-visible if the project stopped here:** the results table, including the ablation that shows why ego compensation matters.
 
@@ -579,24 +598,31 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 **In scope**
 
-- The README per [README outline](#readme-outline).
-- Screenshots.
-- The [reproducibility checks](#reproducibility-checks-owned-by-phase-5).
+- The README per [README outline](#readme-outline), rebuilt in that order, plus a README guard test in `verify.sh`.
+- Screenshots and one short GIF of the Foxglove view, and the Foxglove layout file `viz/foxglove_layout.json` (carried in from Phase 3's E3.7).
+- The [reproducibility checks](#reproducibility-checks-owned-by-phase-5), with a GitHub Actions workflow on a real amd64 runner as the amd64 and Linux evidence.
+- The output-permission fix, so the host user can delete what the processor wrote on a Linux host.
 - The Foxglove troubleshooting section.
-- The repo made public or shared.
+- A display-only ego car marker in Foxglove (`/perception/ego_vehicle`), added at the owner's request.
+- The branch flow: build on `phase-5-ship`, merge into `main`, tag `submission-v1`.
+- The repo made public or shared (the owner's action, after a publication audit).
 - Form submission (the owner's action).
 
 **Exit criteria**
 
-- E5.1: from a fresh clone in an empty directory, using only the README's commands, the expected output files exist and `evaluation.md` matches the committed sample.
-- E5.2: both images build for amd64 and arm64. Inside each, `os-release` reports Ubuntu 24.04 and `python3 --version` reports 3.12.
+- E5.1: from a fresh clone in an empty directory, using only the README's commands, the expected output files exist and `evaluation.md` matches the committed sample. Checked on arm64 (the dev machine) and on the amd64 CI runner. If the amd64 outputs ever differ from the samples for numeric reasons only, the runner's outputs are committed as `docs/samples/amd64/`, the comparison picks the folder by `platform.machine()`, and the claim becomes per architecture; the comparison is never loosened to a tolerance. Two runner runs that disagree with each other go back to the owner.
+- E5.2: both images build for amd64 and arm64. Inside each, `os-release` reports Ubuntu 24.04 and `python3 --version` reports 3.12. The amd64 evidence is the CI log.
 - E5.3: the README contains every outline section, and every command in it was run during E5.1.
-- E5.4: after a run, the host user can read and delete the files in `output/`.
+- E5.4: after a run, the host user can read and delete the files in `output/`. The processor image's entrypoint sets `umask 000`; the CI runner deletes `output/` as a normal user.
 - E5.5: the repo can be opened by someone who isn't the owner.
+- E5.6: `viz/foxglove_layout.json` loads in Foxglove with display frame `world` and transform links hidden, and a screenshot and GIF (≤ 5 MB, ≤ 10 s) are committed. This closes Phase 3's E3.7.
+- E5.7: `verify.sh` runs a README guard test: outline headings in order, every relative link and image resolves, no link into the git-ignored `docs/specs/`, the documented commands exist, and the headline numbers equal the committed samples.
+- E5.8: a publication audit is clean (no KITTI data or secrets tracked or in history, sizes known, the attribution and licence statement present).
+- E5.9: on the amd64 runner, a headless `docker compose up` / `down` leaves complete `tracks.csv`, `metrics.json` and report PNG.
 
 **Reviewer-visible:** the complete submission.
 
-**Open for the phase spec:** a GIF or screenshots only. (Binding the bridge to `127.0.0.1` was done in Phase 1.)
+**Decided in the Phase 5 spec (Nov 6, 2026):** the amd64 proof is a GitHub Actions workflow on a real runner (rejected: emulated amd64 on the dev Mac, whose numeric kernels may differ), with the mismatch rule written before the first run. Output permissions come from the entrypoint's umask (rejected: `user: "${UID}:${GID}"`, because bash does not export `UID`; a chown entrypoint; asking reviewers to `chown`). The layout is drafted by Claude and then imported, fixed and re-exported by the owner in the Foxglove GUI (E5.6). Screenshots plus a short GIF (rejected: screenshots only). The README follows the outline order with a Mermaid architecture diagram and a plain topic table (rejected: keeping the phase-by-phase layout). The repo is to be made public by the owner (rejected: private with invites, since the reviewers are unknown). No `LICENSE` file; the README credits state the KITTI terms and that the committed media and samples are derived from it. A security re-check was triggered by the new workflow, the world-writable outputs and the publication. (Binding the bridge to `127.0.0.1` was done in Phase 1.)
 
 ### Phase 6: Optional evidence (each item independent)
 
@@ -606,6 +632,7 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 1. The [DBSCAN sweep](#dbscan-sweep-optional-phase-6): 12 settings, each with recall, precision and runtime.
 2. The greedy-matching ablation. Its spec defines what "greedy" removes.
+3. Fixing the cause of false "moving" labels (Phase 3's D10 only hides it). Each sub-item is measured against the Phase 4 motion-state numbers, with E3.2/E3.3 still passing: measurement noise scaled with range and point count; a steadier reference point (closest edge or L-shape fit, as a new detection field); hysteresis on the state; then, if sigma and drift shrink, a lower `moving_sigma` so walkers read moving.
 
 **Exit, per item:** its table appears in the README results and the evaluation output, and E5.1 passes again afterwards.
 
@@ -650,8 +677,12 @@ Cut only Phase 6 items: first the DBSCAN sweep, then the greedy ablation. Never 
 | Walls or bushes tracked as obstacles, or cars merged into them | Large or oddly shaped boxes; a car missing for a frame | Local ground tiles (a leftover band of ground bridged cars to walls in the 2D clustering; measured in Phase 2); tighten size filters; require a minimum height. Unlabeled clutter (about 32 unmatched boxes per frame) is a Phase 4 precision question, not a ground problem | 2 |
 | False reset after a stall | Tracks vanish mid-drive; `pass` increments without a loop | Reset only on backward stamps; let misses age out stale tracks | 3 |
 | Velocities are noisy | Arrows flicker | Raise `r_pos`, require more hits before confirming, use box center rather than mean | 3 |
+| Clutter and parked cars labelled moving | Many short tracks drift about 2 m as the view changes | Confident motion state (step 11, done in Phase 3); cause fixes listed in Phase 6 | 3, 4, 6 |
 | Live and offline disagree | Parity check (E3.4) fails | Check dropped frames, stamp pairing and seeding before trusting either | 3 |
 | Precision looks wrong | Many false positives beside or behind the car | Evaluation region limited to the front half, where ground truth exists | 4 |
+| Sample outputs differ byte for byte on another CPU | `verify.sh` fails its sample comparison on a reviewer's machine without a code defect | Checked on arm64 and on GitHub's amd64 runner (identical); the README says so and tells reviewers to `diff`; the per-architecture rule in E5.1 if a runner ever differs | 5 |
+| Files in `output/` are root-owned on a Linux host | The host user can't delete `output/offline/` | The processor entrypoint sets `umask 000`; CI deletes `output/` as a normal user | 5 |
+| Repo is private or `main` is behind `dev` | A reviewer can't open it, or sees a half-built project | Merge into `main`, make the repo public, test a fresh clone of the public URL, tag `submission-v1` | 5 |
 | Foxglove web app can't reach the bridge | Connection fails or the 3D panel is empty | Use Chrome/Edge/Firefox; disable Brave Shields; confirm `ws://localhost:8765` is mapped (`docker compose ps`); fall back to the desktop app or the committed screenshots | 5 |
 
 ### Stretch goals
@@ -701,7 +732,11 @@ Only after Phase 6:
 **Open:**
 
 - Does the form allow resubmission? If yes, submit at the end of Phase 5 and again after Phase 6. If no, submit once, after Phase 6 or in the deadline buffer.
-- The remaining open items are listed in their phases: Phase 3 (forward gaps), Phase 5 (GIF), Phase 6 (greedy definition).
+- The remaining open items are listed in their phases: Phase 6 (greedy definition). Phase 5's GIF question is closed (screenshots plus a short GIF).
+
+**Decided in the Phase 4 spec (Nov 6, 2026):** one gated performance claim, the no-ego static-velocity RMSE ≥ 3× the compensated value; every other metric is reported with no bar by design (rejected: report-only; bars on recall and precision). Moving-label recall added; no "settled tracks" precision row. E4.5 byte-compares the text and JSON samples in verify and hashes the PNG in evidence (rejected: byte-comparing the PNG; a tolerance). `evaluation.md` has six parts organised by what judges each number, precision is renamed label coverage, and unlabelled tracks are judged only by world stillness with excluded counts shown (rejected: a flat table; persistence and footprint bins as evidence). Definitions: GT box-frames, static by tracklet net speed, tracks mapped to velodyne on x and y, warm-up on velocity and label metrics only, ID switches across gaps, no-ego GT velocity rotated into velodyne axes, `n/a` for zero denominators (E4.2 amended). Security re-check: not triggered. Details are in `docs/specs/phase-4-evaluation/FEATURE_SPEC.md`, a local file.
+
+**Decided in the Phase 3 spec (Nov 6, 2026):** E3.2 bar: median of per-tracklet parked medians ≤ 0.5 m/s and each ≤ 0.7 m/s (rejected: worst tracklet ≤ 0.5, already 0.78 for car #5 with a crude fit; a pooled median). E3.3 bar: per-object median speed error ≤ 0.5 m/s against ±5-frame GT, also Phase 4's GT method (rejected: 1.0 m/s; 3-frame GT; comparing to net speeds). E3.4 parity by replaying the live frame list, byte-equal (rejected: loop off with zero drops; clean passes only). Forward gaps age tracks by missing frames and never reset (rejected: the 1 s reset). Foxglove transform links hidden in the layout (rejected: `/clock`). The live PNG is written on the stop signal only; the report PNG and speed summary are committed in Phase 3. One grey legend entry for static tracks. Filter defaults fixed before code (`r_pos` 0.5 m, `q_accel` 1.0, `v0_sigma` 5 m/s). E3.1 bars 0.05 / 0.2 m/s. During the build: the confident motion state, speed − 2σ > 0.7 m/s (rejected: filtering only the PNG; k = 1), and the E3.3 control replaced by ego compensation off (a 2-frame pose shift did not fail). Security re-check: not triggered. The measurements behind these are in `docs/specs/phase-3-tracking/`, a local folder.
 
 **Decided during Phase 2 (Nov 6, 2026):** local ground tiles after the global RANSAC plane (rejected: a 0.3 m inlier distance, which gives recall 0.894 and half the flicker fix; re-splitting oversized clusters, which gives recall 0.944 but 95 ms p95, over the 75 ms bar). The recall bar stays 0.8 and the time bar 75 ms: bars were not moved after seeing results. Measured before/after on the same drive: Car+Van recall 0.823 → 0.908, single-frame misses 38 → 7, offline p95 about 50 ms before and after.
 

@@ -101,3 +101,36 @@ def ego_twist_velo(oxts, T_world_velo_, T_velo_imu):
     linear = np.einsum("nji,nj->ni", R_world_velo, v_velo_world)  # R_world_velo^T . v
     angular = np.einsum("nji,nj->ni", R_world_velo, w_world)
     return linear, angular
+
+
+def quat_to_rot(q_xyzw):
+    """Rotation matrix for a quaternion (x, y, z, w), normalized first. Inverse of rot_to_quat_xyzw.
+
+    Both runners turn a carried pose into a matrix through this one function: the live node from the odom
+    message's float64 fields, the offline runner from rot_to_quat_xyzw of the same pose. The two paths
+    therefore give the same bits (Phase 3, byte-equal live/offline parity).
+    """
+    q = np.asarray(q_xyzw, dtype=np.float64)
+    n = np.linalg.norm(q)
+    if not n > 0:
+        raise ValueError(f"quaternion {q.tolist()} has zero length")
+    x, y, z, w = q / n
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def pose_matrix(position_xyz, q_xyzw):
+    """4x4 T_world_velo from a position and a quaternion (x, y, z, w), as nav_msgs/Odometry carries them."""
+    T = np.eye(4)
+    T[:3, :3] = quat_to_rot(q_xyzw)
+    T[:3, 3] = np.asarray(position_xyz, dtype=np.float64)
+    return T
+
+
+def carried_pose(T):
+    """T as it survives the odom message: position and rot_to_quat_xyzw, rebuilt with pose_matrix."""
+    T = np.asarray(T, dtype=np.float64)
+    return pose_matrix(T[:3, 3], rot_to_quat_xyzw(T[:3, :3]))
