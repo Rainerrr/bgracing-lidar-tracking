@@ -52,8 +52,8 @@ jobs:
             docker compose logs processor 2>&1 | grep -q "processed=100 " && break
             sleep 3
           done
-          docker compose logs processor 2>&1 | grep -E "processed=100 |foxglove|advertis" | head -5
-          docker compose exec -T processor bash -c 'source /opt/ros/jazzy/setup.bash && ros2 topic list' | tee topics.txt
+          docker compose logs processor 2>&1 | grep -E "processed=100 |Server listening" | head -5
+          docker compose exec -T processor bash -c 'source /opt/ros/jazzy/setup.bash && ros2 topic list --no-daemon --spin-time 5' | tee topics.txt
           grep -q /perception/ego_vehicle topics.txt
           grep -q /perception/bounding_boxes topics.txt
           docker compose down
