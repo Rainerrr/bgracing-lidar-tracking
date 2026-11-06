@@ -16,12 +16,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Cache the KITTI drive
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: data/2011_09_26
-          key: kitti-2011_09_26_drive_0005-${{ hashFiles('scripts/download_kitti.sh') }}
+          persist-credentials: false
 
       - name: Download the drive (README step 1)
         run: ./scripts/download_kitti.sh
