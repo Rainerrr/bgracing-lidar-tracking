@@ -191,7 +191,7 @@ def test_the_file_has_no_time_host_or_platform_text(text):
     for word in ("timestamp", "platform", "python 3", "hostname", "ms)", "seconds"):
         assert word not in low, word
     # the only architecture text is the fixed claim about byte identity, the same on every machine
-    assert low.count("arm64") == 1 and "verified on arm64; not tested on amd64" in low
+    assert low.count("arm64") == 1 and "verified on arm64 and on x86_64, the latter on a github actions runner" in low
     assert "None" not in text and "nan" not in low.replace("n/a", "")
 
 

@@ -464,6 +464,6 @@ def render(on, off, abl, meta):
         f"- **Unlabelled track:** a track with at least one frame in the region that is never matched to a tracklet. World stillness scores tracks with at least {MIN_STILLNESS_FRAMES} post-warm-up frames.",
         "- **Zero denominators** print `n/a` with the name of the empty denominator, never 0.",
         f"- **Gate:** only the ablation ratio (at least {ABLATION_RATIO_BAR:.1f}) is a pass/fail bar, fixed before the first Phase 4 run.",
-        f"- **Reproduce:** `{meta['command']}`. Two runs give byte-identical files on the same CPU architecture (verified on arm64; not tested on amd64).",
+        f"- **Reproduce:** `{meta['command']}`. Two runs give byte-identical files on the same CPU architecture (verified on arm64 and on x86_64, the latter on a GitHub Actions runner).",
     ]
     return "\n".join(L) + "\n"

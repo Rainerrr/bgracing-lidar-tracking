@@ -137,4 +137,4 @@ The off run tracks in the velodyne frame, so its positions move with the car and
 - **Unlabelled track:** a track with at least one frame in the region that is never matched to a tracklet. World stillness scores tracks with at least 10 post-warm-up frames.
 - **Zero denominators** print `n/a` with the name of the empty denominator, never 0.
 - **Gate:** only the ablation ratio (at least 3.0) is a pass/fail bar, fixed before the first Phase 4 run.
-- **Reproduce:** `docker compose run --rm --no-deps processor python3 /app/scripts/evaluate.py`. Two runs give byte-identical files on the same CPU architecture (verified on arm64; not tested on amd64).
+- **Reproduce:** `docker compose run --rm --no-deps processor python3 /app/scripts/evaluate.py`. Two runs give byte-identical files on the same CPU architecture (verified on arm64 and on x86_64, the latter on a GitHub Actions runner).
