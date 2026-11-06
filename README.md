@@ -65,7 +65,7 @@ The numbers come from [`docs/samples/dataset_stats.json`](docs/samples/dataset_s
 docker compose run --rm --no-deps processor python3 /app/scripts/dataset_stats.py
 ```
 
-Two runs produce byte-identical files, and they match `docs/samples/`.
+Two runs produce byte-identical `dataset_stats.json` files, and the JSON matches `docs/samples/dataset_stats.json` on arm64 and on GitHub's x86_64 runner. The PNG is regenerated with it but not compared byte for byte.
 
 **Time and poses.** Every message carries the sweep's stamp from `velodyne_points/timestamps.txt`, read as UTC. Poses come from OXTS via a Mercator projection, the same convention as pykitti, with `T_world_velo = T_world_imu · inverse(T_velo_imu)`.
 
@@ -131,7 +131,7 @@ Scored against the KITTI tracklets in the front half of the region of interest (
 - The mean distance between matched centers is 0.54 m (90th percentile 1.39 m). Boxes are axis-aligned and built from the points the sensor sees, so a car seen from one side can have its box center offset from the true center (up to 1.9 m even for a perfect segmentation of the ground-truth boxes).
 - The weakest tracklet is parked van #3, matched in 76 of 107 frames (0.710). The local ground tiles helped it only a little; its misses are still clusters merged into something larger than a van, and I have not diagnosed what it merges with. Pedestrians are mostly missed (6 of 22 boxes, two tracklets); the cause has not been diagnosed.
 - On average 32.0 detections per sweep in that region match no ground-truth box (maximum 54). This is not a false-positive rate: the tracklets label only a few object types in front of the car, so unlabeled objects count as unmatched.
-- Time per sweep for the detection stages (the sweep's file read excluded), on an Apple M5 Pro in Docker (linux/arm64): 95th percentile 49.7–50.4 ms over three runs (mean about 45 ms), against a 75 ms bar and the 100 ms live period. Pinned to a single core the 95th percentile was 64 ms. Live, with the publisher and bridge sharing the CPU: about 48 ms (the whole callback about 53 ms), and no sweep was skipped in the recorded run (678 of 678). Timing varies by machine and is not part of the committed samples.
+- Time per sweep for the detection stages (the sweep's file read excluded), on an Apple M5 Pro in Docker (linux/arm64): 95th percentile 49.7–50.4 ms over three runs (mean about 45 ms), against a 75 ms bar and the 100 ms live period. Pinned to a single core the 95th percentile was 64 ms. Live, with the publisher and bridge sharing the CPU, in the Phase 2 run (before the ego car marker was added): about 48 ms (the whole callback about 53 ms), and no sweep was skipped (678 of 678). A typical live run loses a couple of sweeps: 2 of 475 in the last check, with the whole callback at 63 ms at the 95th percentile. Timing varies by machine and is not part of the committed samples.
 - The recall gate in `./scripts/verify.sh` is 0.8 and the measured value is 0.908 (56 box-frames of margin). No parameter was tuned against these numbers.
 
 ### Tracking
@@ -167,7 +167,7 @@ The bar is 0.5 m/s per object. `./scripts/verify.sh` gates both tables and check
 
 **The report image** (`obstacle_tracking_report.png`, at the top): the ego path in black, moving tracks as solid lines with an ID and a velocity arrow (0.5 s ahead), static tracks thin, dashed and grey under one legend entry. A track is drawn as moving if the tracker labelled it `moving` in at least half of its sweeps. To make the real moving objects easy to find, the offline report tags every track matched to a ground-truth tracklet that moves (net speed ≥ 0.5 m/s): `#30 = GT #0 Van`, `#25 = GT #1 Cyclist`, `#27 = GT #2 Pedestrian` and `#295 = GT #4 Car`. **These class names come from the ground truth, as the footnote on the image says: the processor does not classify objects.** The live report has no tags.
 
-**Live.** The live node gives byte-for-byte the same tracks as the offline tracker fed the same sweeps: checked over 3 passes (33,315 track rows), including a pass with a dropped sweep. On the dev machine the whole live callback, file writes included, took 59 ms at the 95th percentile, against the 100 ms sweep period; the tracking step itself takes under 2 ms.
+**Live.** The live node gives byte-for-byte the same tracks as the offline tracker fed the same sweeps: checked over 4 passes (34,718 track rows, 0 mismatched), including passes with dropped sweeps, and every marker array starts with `DELETEALL`. This was re-run after the last code change (the ego car marker). On the dev machine the whole live callback, file writes included, took 63 ms at the 95th percentile, against the 100 ms sweep period; the tracking step itself takes under 2 ms.
 
 ### Evaluation
 
@@ -267,6 +267,7 @@ The bridge listens on `127.0.0.1` only, because `foxglove_bridge` has no authent
 | `ros2 topic list` shows no topics from the other container | Both services use `ROS_DOMAIN_ID=42` on compose's default bridge network. Start both with the same `docker compose up`. Host networking is not used. |
 | Port 8765 is already in use | Stop the other program, or change the left side of `127.0.0.1:8765:8765` in `docker-compose.yml`. |
 | `verify.sh` fails on the byte comparison of a sample | Compare with `diff`. The samples are verified on arm64 and on GitHub's x86_64 runner; a different CPU can in principle give a last-digit difference that is not a code defect. Please tell me what you see. |
+| `output/` files can't be deleted | The processor image sets `umask 000`, so files are 0666 and folders 0777 and any host user can delete them. If you have old root-owned files from a build without it, delete them once with `sudo`. |
 | Frames are dropped in the live run | About 2 % of sweeps can be lost on the bridge network; the count is in `metrics.json`. The reported numbers come from the offline runner, which never drops. |
 
 ## Limitations and next steps
