@@ -8,5 +8,6 @@ cd "$(dirname "$0")/.."
 docker compose build
 docker compose run --rm --no-deps publisher python3 -c \
   "import core.kitti, core.poses; from nav_msgs.msg import Odometry; from tf2_ros import TransformBroadcaster; print('publisher imports OK')"
-# docs/samples is mounted read-only for the sample-regeneration check (E4.5): the images do not copy docs/
-docker compose run --rm --no-deps -v "$PWD/docs/samples:/samples:ro" processor python3 -m pytest -q -p no:cacheprovider /app/tests "$@"
+# docs/samples is mounted read-only for the sample-regeneration check (E4.5) and the repo for the README test (E5.7):
+# the images copy neither
+docker compose run --rm --no-deps -v "$PWD/docs/samples:/samples:ro" -v "$PWD:/repo:ro" processor python3 -m pytest -q -p no:cacheprovider /app/tests "$@"
