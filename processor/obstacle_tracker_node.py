@@ -87,6 +87,7 @@ class ObstacleTrackerNode(Node):
         self.box_pub = self.create_publisher(MarkerArray, "/perception/bounding_boxes", reliable)
         self.arrow_pub = self.create_publisher(MarkerArray, "/perception/obstacle_vectors", reliable)
         self.label_pub = self.create_publisher(MarkerArray, "/perception/track_labels", reliable)
+        self.ego_pub = self.create_publisher(MarkerArray, "/perception/ego_vehicle", reliable)
         self.create_subscription(Odometry, "/sensor/ego/odom", self.on_odom, reliable)
         self.create_subscription(PointCloud2, "/sensor/lidar/raw_points", self.on_cloud,
                                  QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
@@ -157,6 +158,7 @@ class ObstacleTrackerNode(Node):
         self.box_pub.publish(boxes)
         self.arrow_pub.publish(arrows)
         self.label_pub.publish(labels)
+        self.ego_pub.publish(markers.ego_vehicle_markers(header))  # velodyne frame: follows the car by itself
 
         processed = len(self.log)
         if processed % self.p.report_every_n == 0:

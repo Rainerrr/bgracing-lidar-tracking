@@ -76,3 +76,18 @@ def test_box_is_rotated_into_the_tracking_frame():
     ys = [p.y for p in boxes.markers[1].points]
     # l = 4 along velodyne x becomes 4 along world y after a 90 degree yaw
     assert abs((max(xs) - min(xs)) - 2.0) < 1e-9 and abs((max(ys) - min(ys)) - 4.0) < 1e-9
+
+
+def test_ego_vehicle_markers_start_with_deleteall_and_say_what_they_are():
+    arr = markers.ego_vehicle_markers(header())
+    assert arr.markers[0].action == Marker.DELETEALL
+    kinds = [m.type for m in arr.markers[1:]]
+    assert kinds == [Marker.CUBE, Marker.SPHERE, Marker.ARROW, Marker.TEXT_VIEW_FACING]
+    assert all(m.header.frame_id == "velodyne" for m in arr.markers)
+    body, sensor = arr.markers[1], arr.markers[2]
+    assert sensor.pose.position.x == sensor.pose.position.y == sensor.pose.position.z == 0.0  # the LiDAR origin
+    assert (body.scale.x, body.scale.y, body.scale.z) == markers.EGO_SIZE
+    # the body spans the sensor's x and y, and its roof is just below the sensor (the sensor sits on the roof)
+    assert body.pose.position.x - body.scale.x / 2 < 0 < body.pose.position.x + body.scale.x / 2
+    assert body.pose.position.z + body.scale.z / 2 <= 0.0
+    assert "approximate" in arr.markers[4].text and "ego car" in arr.markers[4].text

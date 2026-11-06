@@ -106,3 +106,45 @@ def track_markers(header, tracks, R_frame_velo, pass_no=0):
         label.text = f"#{t.track_id} {t.state} {t.speed * 3.6:.0f} km/h"
         labels.markers.append(label)
     return boxes, arrows, labels
+
+
+# ---------------------------------------------------------------- Phase 5: ego car (velodyne frame)
+
+# Approximate KITTI ego car (a VW Passat wagon) relative to the LiDAR. The sensor sits 1.73 m above the ground
+# (the calibration-direction test pins this); the body outline is NOT measured: the cloud has no returns on
+# the body, and the length, width and front/rear offset are rounded values for a car of this class.
+# The marker says so in its label. It sits in the velodyne frame, so it follows the car by itself.
+EGO_SIZE = (4.6, 1.8, 1.5)      # length, width, height (m)
+EGO_CENTER = (-0.8, 0.0, -0.98)  # box center in velodyne axes: sensor height 1.73 m - half the body height - gap
+EGO_RGB = (0.9, 0.9, 0.95)       # light grey; the text label says what it is, color carries no meaning
+
+
+def ego_vehicle_markers(header):
+    """MarkerArray with DELETEALL, a translucent body box, a sphere at the LiDAR origin, a heading arrow and a label."""
+    arr = _cleared(header, 0)
+    body = _marker(header, "ego", 0, Marker.CUBE)
+    body.pose.position.x, body.pose.position.y, body.pose.position.z = EGO_CENTER
+    body.scale.x, body.scale.y, body.scale.z = EGO_SIZE
+    body.color.r, body.color.g, body.color.b, body.color.a = (*EGO_RGB, 0.35)
+    arr.markers.append(body)
+
+    sensor = _marker(header, "ego", 1, Marker.SPHERE)
+    sensor.scale.x = sensor.scale.y = sensor.scale.z = 0.3
+    sensor.color.r, sensor.color.g, sensor.color.b, sensor.color.a = 1.0, 0.2, 0.2, 1.0
+    arr.markers.append(sensor)
+
+    heading = _marker(header, "ego", 2, Marker.ARROW)
+    heading.scale.x, heading.scale.y, heading.scale.z = 0.15, 0.35, 0.35
+    heading.color.r, heading.color.g, heading.color.b, heading.color.a = 1.0, 0.2, 0.2, 1.0
+    heading.points.append(Point(x=0.0, y=0.0, z=0.0))
+    heading.points.append(Point(x=2.0, y=0.0, z=0.0))
+    arr.markers.append(heading)
+
+    label = _marker(header, "ego", 3, Marker.TEXT_VIEW_FACING)
+    label.pose.position.x, label.pose.position.y = 0.0, 0.0
+    label.pose.position.z = EGO_CENTER[2] + EGO_SIZE[2] / 2 + 0.6
+    label.scale.z = 0.5
+    label.color.r = label.color.g = label.color.b = label.color.a = 1.0
+    label.text = "ego car (LiDAR = red dot, arrow = forward; body size approximate)"
+    arr.markers.append(label)
+    return arr

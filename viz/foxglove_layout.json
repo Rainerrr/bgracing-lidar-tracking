@@ -10,8 +10,16 @@
           "divisions": 20,
           "lineWidth": 1,
           "color": "#4d4d4d",
-          "position": [0, 0, 0],
-          "rotation": [0, 0, 0],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
           "order": 1
         }
       },
@@ -20,9 +28,22 @@
         "distance": 70,
         "phi": 0,
         "thetaOffset": 0,
-        "targetOffset": [0, 0, 0],
-        "target": [0, 0, 0],
-        "targetOrientation": [0, 0, 0, 1],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
         "fovy": 45,
         "near": 0.5,
         "far": 5000
@@ -39,8 +60,12 @@
         }
       },
       "transforms": {
-        "frame:world": { "visible": false },
-        "frame:velodyne": { "visible": false }
+        "frame:world": {
+          "visible": false
+        },
+        "frame:velodyne": {
+          "visible": false
+        }
       },
       "topics": {
         "/sensor/lidar/raw_points": {
@@ -61,11 +86,28 @@
           "pointShape": "square",
           "decayTime": 0
         },
-        "/perception/bounding_boxes": { "visible": true },
-        "/perception/obstacle_vectors": { "visible": true },
-        "/perception/track_labels": { "visible": true }
+        "/perception/bounding_boxes": {
+          "visible": true
+        },
+        "/perception/obstacle_vectors": {
+          "visible": true
+        },
+        "/perception/track_labels": {
+          "visible": true
+        },
+        "/perception/ego_vehicle": {
+          "visible": true
+        }
       },
-      "publish": { "type": "point", "poseTopic": "/move_base_simple/goal", "pointTopic": "/clicked_point", "poseEstimateTopic": "/initialpose", "poseEstimateXDeviation": 0.5, "poseEstimateYDeviation": 0.5, "poseEstimateThetaDeviation": 0.26 },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      },
       "imageMode": {}
     },
     "Plot!1egospd": {
@@ -88,7 +130,9 @@
   },
   "globalVariables": {},
   "userNodes": {},
-  "playbackConfig": { "speed": 1 },
+  "playbackConfig": {
+    "speed": 1
+  },
   "layout": {
     "first": "3D!1pipe0",
     "second": "Plot!1egospd",

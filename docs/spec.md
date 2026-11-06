@@ -186,6 +186,7 @@ Node `obstacle_tracker_node` turns each sweep into tracked obstacles with world-
 | `/perception/bounding_boxes` | `MarkerArray` | velodyne in Phase 2, world from Phase 3 | `LINE_LIST` wireframe per detection (per confirmed track from Phase 3, colored by state), plus a `TEXT_VIEW_FACING` label with its size and point count |
 | `/perception/obstacle_vectors` | `MarkerArray` | world | `ARROW` from box center along (vx, vy), length = speed × 0.5 s |
 | `/perception/track_labels` | `MarkerArray` | world | `TEXT_VIEW_FACING`: track ID, state as text, and speed in km/h |
+| `/perception/ego_vehicle` | `MarkerArray` | velodyne | Added in Phase 5, display only: a translucent body box (4.6 × 1.8 × 1.5 m, approximate: the cloud has no returns on the body), a red sphere at the LiDAR origin, a forward arrow and a text label saying the size is approximate. It follows the car through the `world → velodyne` transform |
 
 Every `MarkerArray` begins with a `DELETEALL` marker, so deleted tracks don't leave ghosts. Per-frame processing time and the dropped-frame count go into `metrics.json`.
 
