@@ -319,6 +319,7 @@ A grader runs three commands: download the data, `docker compose up`, then open 
 bgracing-lidar-tracking/
 ├── docker-compose.yml
 ├── README.md
+├── .github/workflows/verify.yml  # amd64 CI: download, build, verify, evaluate diff, live run, permissions (Phase 5)
 ├── core/                       # shared ROS-free code, copied into both images (Phase 1)
 │   ├── kitti.py                # data layer: sweeps, stamps, OXTS, calibration, tracklets
 │   └── poses.py                # OXTS → world poses, transforms, ego twist
@@ -350,7 +351,7 @@ bgracing-lidar-tracking/
 │   └── evaluate.py
 ├── viz/
 │   └── foxglove_layout.json
-├── tests/                      # pytest: data layer, pose math, RANSAC, perception, tracker, metrics
+├── tests/                      # pytest: data layer, pose math, RANSAC, perception, tracker, metrics, README guard (Phase 5)
 ├── docs/                       # this spec, sample outputs (docs/samples/) and screenshots for reviewers
 ├── data/                       # git-ignored
 └── output/                     # git-ignored
@@ -377,11 +378,11 @@ services:
     depends_on: [publisher]
 ```
 
-No `network_mode` is set, so both services share compose's default bridge network. Scripts run directly with `python3` after sourcing ROS. The launch file starts them with `ExecuteProcess`, which avoids building colcon packages. Both images copy `core/` and set `PYTHONPATH=/app`. Since Phase 1 the bridge port is bound to `127.0.0.1` only, because `foxglove_bridge` has no authentication.
+No `network_mode` is set, so both services share compose's default bridge network. Scripts run directly with `python3` after sourcing ROS. The launch file starts them with `ExecuteProcess`, which avoids building colcon packages. Both images copy `core/` and set `PYTHONPATH=/app`. Since Phase 1 the bridge port is bound to `127.0.0.1` only, because `foxglove_bridge` has no authentication. Since Phase 5 the processor image's entrypoint runs `umask 000` before the ROS entrypoint, so files and folders written to the mounted `/output` are deletable by the host user whatever its uid (the container runs as root).
 
 ### Commands for the README
 
-Final commands are fixed in Phase 5. Offline commands use `--no-deps` so they don't start the publisher.
+Fixed in Phase 5 and run in full on a fresh clone. Offline commands use `--no-deps` so they don't start the publisher.
 
 ```bash
 ./scripts/download_kitti.sh                     # fetch the drive into ./data
@@ -597,24 +598,31 @@ P0 Plumbing ─► P1 Foundations ─► P2 Detection ─► P3 Tracking ─► 
 
 **In scope**
 
-- The README per [README outline](#readme-outline).
-- Screenshots.
-- The [reproducibility checks](#reproducibility-checks-owned-by-phase-5).
+- The README per [README outline](#readme-outline), rebuilt in that order, plus a README guard test in `verify.sh`.
+- Screenshots and one short GIF of the Foxglove view, and the Foxglove layout file `viz/foxglove_layout.json` (carried in from Phase 3's E3.7).
+- The [reproducibility checks](#reproducibility-checks-owned-by-phase-5), with a GitHub Actions workflow on a real amd64 runner as the amd64 and Linux evidence.
+- The output-permission fix, so the host user can delete what the processor wrote on a Linux host.
 - The Foxglove troubleshooting section.
-- The repo made public or shared.
+- A display-only ego car marker in Foxglove (`/perception/ego_vehicle`), added at the owner's request.
+- The branch flow: build on `phase-5-ship`, merge into `main`, tag `submission-v1`.
+- The repo made public or shared (the owner's action, after a publication audit).
 - Form submission (the owner's action).
 
 **Exit criteria**
 
-- E5.1: from a fresh clone in an empty directory, using only the README's commands, the expected output files exist and `evaluation.md` matches the committed sample.
-- E5.2: both images build for amd64 and arm64. Inside each, `os-release` reports Ubuntu 24.04 and `python3 --version` reports 3.12.
+- E5.1: from a fresh clone in an empty directory, using only the README's commands, the expected output files exist and `evaluation.md` matches the committed sample. Checked on arm64 (the dev machine) and on the amd64 CI runner. If the amd64 outputs ever differ from the samples for numeric reasons only, the runner's outputs are committed as `docs/samples/amd64/`, the comparison picks the folder by `platform.machine()`, and the claim becomes per architecture; the comparison is never loosened to a tolerance. Two runner runs that disagree with each other go back to the owner.
+- E5.2: both images build for amd64 and arm64. Inside each, `os-release` reports Ubuntu 24.04 and `python3 --version` reports 3.12. The amd64 evidence is the CI log.
 - E5.3: the README contains every outline section, and every command in it was run during E5.1.
-- E5.4: after a run, the host user can read and delete the files in `output/`.
+- E5.4: after a run, the host user can read and delete the files in `output/`. The processor image's entrypoint sets `umask 000`; the CI runner deletes `output/` as a normal user.
 - E5.5: the repo can be opened by someone who isn't the owner.
+- E5.6: `viz/foxglove_layout.json` loads in Foxglove with display frame `world` and transform links hidden, and a screenshot and GIF (≤ 5 MB, ≤ 10 s) are committed. This closes Phase 3's E3.7.
+- E5.7: `verify.sh` runs a README guard test: outline headings in order, every relative link and image resolves, no link into the git-ignored `docs/specs/`, the documented commands exist, and the headline numbers equal the committed samples.
+- E5.8: a publication audit is clean (no KITTI data or secrets tracked or in history, sizes known, the attribution and licence statement present).
+- E5.9: on the amd64 runner, a headless `docker compose up` / `down` leaves complete `tracks.csv`, `metrics.json` and report PNG.
 
 **Reviewer-visible:** the complete submission.
 
-**Open for the phase spec:** a GIF or screenshots only. (Binding the bridge to `127.0.0.1` was done in Phase 1.)
+**Decided in the Phase 5 spec (Nov 6, 2026):** the amd64 proof is a GitHub Actions workflow on a real runner (rejected: emulated amd64 on the dev Mac, whose numeric kernels may differ), with the mismatch rule written before the first run. Output permissions come from the entrypoint's umask (rejected: `user: "${UID}:${GID}"`, because bash does not export `UID`; a chown entrypoint; asking reviewers to `chown`). The layout was drafted by Claude and finalised by the owner in the Foxglove GUI. Screenshots plus a short GIF (rejected: screenshots only). The README follows the outline order with a Mermaid architecture diagram and a plain topic table (rejected: keeping the phase-by-phase layout). The repo is made public (rejected: private with invites, since the reviewers are unknown). No `LICENSE` file; the README credits state the KITTI terms and that the committed media and samples are derived from it. A security re-check was triggered by the new workflow, the world-writable outputs and the publication. (Binding the bridge to `127.0.0.1` was done in Phase 1.)
 
 ### Phase 6: Optional evidence (each item independent)
 
@@ -672,6 +680,9 @@ Cut only Phase 6 items: first the DBSCAN sweep, then the greedy ablation. Never 
 | Clutter and parked cars labelled moving | Many short tracks drift about 2 m as the view changes | Confident motion state (step 11, done in Phase 3); cause fixes listed in Phase 6 | 3, 4, 6 |
 | Live and offline disagree | Parity check (E3.4) fails | Check dropped frames, stamp pairing and seeding before trusting either | 3 |
 | Precision looks wrong | Many false positives beside or behind the car | Evaluation region limited to the front half, where ground truth exists | 4 |
+| Sample outputs differ byte for byte on another CPU | `verify.sh` fails its sample comparison on a reviewer's machine without a code defect | Checked on arm64 and on GitHub's amd64 runner (identical); the README says so and tells reviewers to `diff`; the per-architecture rule in E5.1 if a runner ever differs | 5 |
+| Files in `output/` are root-owned on a Linux host | The host user can't delete `output/offline/` | The processor entrypoint sets `umask 000`; CI deletes `output/` as a normal user | 5 |
+| Repo is private or `main` is behind `dev` | A reviewer can't open it, or sees a half-built project | Merge into `main`, make the repo public, test a fresh clone of the public URL, tag `submission-v1` | 5 |
 | Foxglove web app can't reach the bridge | Connection fails or the 3D panel is empty | Use Chrome/Edge/Firefox; disable Brave Shields; confirm `ws://localhost:8765` is mapped (`docker compose ps`); fall back to the desktop app or the committed screenshots | 5 |
 
 ### Stretch goals
@@ -721,7 +732,7 @@ Only after Phase 6:
 **Open:**
 
 - Does the form allow resubmission? If yes, submit at the end of Phase 5 and again after Phase 6. If no, submit once, after Phase 6 or in the deadline buffer.
-- The remaining open items are listed in their phases: Phase 5 (GIF), Phase 6 (greedy definition).
+- The remaining open items are listed in their phases: Phase 6 (greedy definition). Phase 5's GIF question is closed (screenshots plus a short GIF).
 
 **Decided in the Phase 4 spec (Nov 6, 2026):** one gated performance claim, the no-ego static-velocity RMSE ≥ 3× the compensated value; every other metric is reported with no bar by design (rejected: report-only; bars on recall and precision). Moving-label recall added; no "settled tracks" precision row. E4.5 byte-compares the text and JSON samples in verify and hashes the PNG in evidence (rejected: byte-comparing the PNG; a tolerance). `evaluation.md` has six parts organised by what judges each number, precision is renamed label coverage, and unlabelled tracks are judged only by world stillness with excluded counts shown (rejected: a flat table; persistence and footprint bins as evidence). Definitions: GT box-frames, static by tracklet net speed, tracks mapped to velodyne on x and y, warm-up on velocity and label metrics only, ID switches across gaps, no-ego GT velocity rotated into velodyne axes, `n/a` for zero denominators (E4.2 amended). Security re-check: not triggered. Details are in `docs/specs/phase-4-evaluation/FEATURE_SPEC.md`, a local file.
 
