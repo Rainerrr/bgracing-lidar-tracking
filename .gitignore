@@ -7,5 +7,7 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# Spec-first workflow specs (local only)
-docs/specs/
+# Local working files, not part of the submission
+internal/
+.claude/
+CLAUDE.md

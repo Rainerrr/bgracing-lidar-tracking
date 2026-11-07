@@ -1,7 +1,7 @@
 """Row formats, file writers and comparers shared by the live node, the offline runner and the live checker.
 
 ROS-free. One writer for the detection and stage files is what makes the live/offline parity check
-(E2.6) meaningful: both sides format rows with the same code. Hashed files carry no timing.
+meaningful: both sides format rows with the same code. Hashed files carry no timing.
 """
 import json
 import math
@@ -12,7 +12,7 @@ from pathlib import Path
 DETECTION_HEADER = "frame,stamp_ns,x,y,z,dx,dy,dz,n_points"
 FRAMES_HEADER = "frame,stamp_ns,raw,roi,voxel,non_ground,clustered,clusters_found,clusters_kept,ground_status"
 DELETEALL = 3  # visualization_msgs/Marker.DELETEALL
-TRACK_HEADER = "pass,frame,stamp_ns,track_id,x,y,vx,vy,speed,state,l,w,h"  # frozen at the end of Phase 3
+TRACK_HEADER = "pass,frame,stamp_ns,track_id,x,y,vx,vy,speed,state,l,w,h"  # fixed: the README and the checks rely on it
 
 
 # ---------------------------------------------------------------- rows
@@ -29,7 +29,7 @@ def frames_row(frame, stamp_ns, result):
 
 
 def track_rows(pass_no, frame, stamp_ns, tracks):
-    """tracks.csv rows (contract in docs/spec.md): confirmed tracks of one frame, sorted by track_id.
+    """tracks.csv rows (columns in TRACK_HEADER, described in the README): confirmed tracks of one frame, sorted by track_id.
 
     x, y, vx, vy in the tracking frame (world, or velodyne with ego compensation off); l, w, h are the last
     matched detection's extents along the velodyne axes. The same function formats live and offline rows.
@@ -121,7 +121,7 @@ def read_offline_rows(detections_csv, frames_csv):
 
 
 def compare_parity(live, offline, min_frames=0):
-    """E2.6: every live (pass, frame) must equal the offline rows of that frame, byte for byte.
+    """Detection parity: every live (pass, frame) must equal the offline rows of that frame, byte for byte.
 
     Returns {"compared": pairs, "distinct_frames": n, "mismatched": [...], "ok": bool}; ok needs 0 mismatches
     and at least min_frames distinct dataset frames compared.
@@ -138,7 +138,7 @@ def compare_parity(live, offline, min_frames=0):
 
 
 def compare_markers(arrays, live):
-    """E2.5: every recorded MarkerArray starts with DELETEALL, and its LINE_LIST count equals the live
+    """Detection markers: every recorded MarkerArray starts with DELETEALL, and its LINE_LIST count equals the live
     detection count for its stamp (one text label per box, nothing else).
 
     arrays: [{"stamp_ns", "first_action", "n_line_list", "n_text", "n_total"}] in arrival order.
@@ -166,7 +166,7 @@ def compare_markers(arrays, live):
     return {"arrays": len(arrays), "problems": problems, "ok": not problems and len(arrays) > 0}
 
 
-# ---------------------------------------------------------------- Phase 3 comparers (live checker)
+# ---------------------------------------------------------------- track comparers (live checker)
 
 def read_live_tracks(tracks_csv):
     """{(pass, frame): [tracks.csv row text, ...]} (rows keep their pass column)."""
@@ -193,7 +193,7 @@ def frames_by_pass(processed):
 
 
 def compare_track_parity(live_by_pass, replay_by_pass):
-    """E3.4: per pass, the live tracks.csv rows equal the offline replay of the same frames, byte for byte."""
+    """Track parity: per pass, the live tracks.csv rows equal the offline replay of the same frames, byte for byte."""
     mismatched = []
     for p in sorted(set(live_by_pass) | set(replay_by_pass)):
         a, b = live_by_pass.get(p, []), replay_by_pass.get(p, [])
@@ -206,7 +206,7 @@ def compare_track_parity(live_by_pass, replay_by_pass):
 
 
 def check_loop(processed, live_tracks):
-    """E3.5: pass changes exactly at a wrap (frame index goes back), by +1; the first processed frame of every
+    """Loop: pass changes exactly at a wrap (frame index goes back), by +1; the first processed frame of every
     pass has no confirmed track (a reset tracker needs confirm_hits frames), so no track survives a wrap.
 
     Assumes confirm_hits >= 2 (it is 3): with 1, a fresh track would be confirmed on the first frame. A stale ID
@@ -230,7 +230,7 @@ def check_loop(processed, live_tracks):
 
 
 def compare_track_markers(arrays, live_frames, live_tracks):
-    """Track markers (Phase 3): every array starts with DELETEALL carrying the pass; boxes and labels: one per
+    """Track markers: every array starts with DELETEALL carrying the pass; boxes and labels: one per
     confirmed track of that (pass, stamp); arrows: one per moving track.
 
     arrays: [{"topic", "pass", "stamp_ns", "first_action", "n_line_list", "n_text", "n_arrow", "n_total"}].

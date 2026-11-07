@@ -1,6 +1,6 @@
 """Pose math: OXTS -> world poses, frame transforms and the ego twist.
 
-World frame (frozen at the end of Phase 1): ENU axes (x east, y north, z up),
+World frame (fixed; every output uses it): ENU axes (x east, y north, z up),
 origin at the first OXTS position. This is pykitti's convention: Mercator
 projection of lat/lon with the scale taken from the first latitude, altitude
 for z, and absolute roll/pitch/yaw with R = Rz(yaw) . Ry(pitch) . Rx(roll).
@@ -108,7 +108,7 @@ def quat_to_rot(q_xyzw):
 
     Both runners turn a carried pose into a matrix through this one function: the live node from the odom
     message's float64 fields, the offline runner from rot_to_quat_xyzw of the same pose. The two paths
-    therefore give the same bits (Phase 3, byte-equal live/offline parity).
+    therefore give the same bits, which the byte-equal live/offline track parity relies on.
     """
     q = np.asarray(q_xyzw, dtype=np.float64)
     n = np.linalg.norm(q)

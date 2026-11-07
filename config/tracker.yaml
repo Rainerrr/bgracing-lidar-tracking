@@ -1,4 +1,4 @@
-# Parameters for obstacle_tracker_node and scripts/run_offline.py (one source, see docs/spec.md).
+# Parameters for obstacle_tracker_node and scripts/run_offline.py (one source; the README explains each value).
 # Every key is required; a missing or unknown key is an error that names it.
 obstacle_tracker_node:
   ros__parameters:
@@ -26,7 +26,7 @@ obstacle_tracker_node:
     max_width: 3.0              # m, oriented
     min_height: 0.3             # m, z extent
     max_height: 3.0
-    # Phase 3: tracking. Defaults fixed before any tracking code ran (phase-3 FEATURE_SPEC D8).
+    # Tracking. The filter and lifecycle defaults (gate_m to v0_sigma) were fixed before any tracking code ran, never tuned.
     gate_m: 2.0                 # m, association gate on predicted-to-detection distance
     confirm_hits: 3             # hits before a track is confirmed (output and drawn)
     max_misses: 5               # consecutive misses (missing frames included) that delete a track
@@ -34,7 +34,7 @@ obstacle_tracker_node:
     r_pos: 0.5                  # m, measurement standard deviation of a detection center
     v0_sigma: 5.0               # m/s, initial velocity uncertainty (new tracks start at v = 0)
     moving_speed: 0.7           # m/s; a confirmed track is "moving" if speed - moving_sigma * sigma_speed > this
-    moving_sigma: 2.0           # sigma_speed = filter velocity std along the direction of travel (decided Nov 6, D10)
+    moving_sigma: 2.0           # sigma_speed = filter velocity std along travel; added during the build, after the plain rule labelled 197 of 417 tracks moving
     ego_compensation: true      # false: track in the velodyne frame (the no-ego ablation)
-    association: hungarian      # hungarian | greedy (greedy is the Phase 6 ablation)
+    association: hungarian      # the only method (optimal one-to-one assignment); recorded in the outputs
     warmup_frames: 5            # evaluation only: frames after confirmation excluded from speed scoring

@@ -1,4 +1,4 @@
-"""E1.1 isolation: the shared core stays ROS-free and numpy-only, so both images can import it."""
+"""Isolation: the shared core stays ROS-free and numpy-only, so both images can import it."""
 import subprocess
 import sys
 from pathlib import Path

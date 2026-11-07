@@ -1,4 +1,4 @@
-"""Perception core, docs/spec.md steps 2-7 (velodyne frame). ROS-free: numpy, scipy, sklearn.
+"""Perception core: ROI, voxels, ground removal, clustering, size filter, boxes (velodyne frame). ROS-free: numpy, scipy, sklearn.
 
 detect(points, stamp_ns, params) turns one sweep into axis-aligned detections. The live node and the
 offline runner both call it, so a number can only differ between them if the input differs.
@@ -124,7 +124,7 @@ def _fit_planes(x, y, z, group, n_groups, use):
 
 
 def refine_ground_tiles(centers, ground, p):
-    """Local ground per tile, on top of the global RANSAC plane (docs/spec.md step 4, decided Nov 6).
+    """Local ground per tile, on top of the global RANSAC plane (README, Detection step 3).
 
     One plane can't follow 80 m of road (crown, slopes, raised sidewalks); the band of ground it leaves
     0.2-0.4 m above itself bridges cars to walls in the 2D clustering. Per ground_tile_size tile:

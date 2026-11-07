@@ -6,13 +6,13 @@ Offline run over all 154 frames, once with ego compensation and once without, sc
 
 *How to read this:* The headline numbers, each pointing to its part. One result is gated: removing ego compensation must at least triple the velocity error of parked cars. Everything else is reported, with no pass/fail bar by design, because bars are not set after the results are known.
 
-**Gate (D1): PASS.** Static-object velocity RMSE is 0.653 m/s with ego compensation and 5.348 m/s without: a ratio of 8.19, against a bar of at least 3.0 (part 4).
+**Gate: PASS.** Static-object velocity RMSE is 0.653 m/s with ego compensation and 5.348 m/s without: a ratio of 8.19, against a bar of at least 3.0 (part 4).
 
 | Result | Value | Judged by | Part |
 |---|---|---|---|
 | Static-object velocity RMSE, ego compensation off vs on | 8.19x | gated, bar 3.0x | 4 |
-| Parked tracklets: median of per-tracklet median speed (m/s) | 0.379 | gated in Phase 3 (E3.2), bar 0.5; worst tracklet 0.660, bar 0.7 | 2 |
-| Lead van and cyclist: median speed error (m/s) | 0.217 / 0.236 | gated in Phase 3 (E3.3), bar 0.5 | 2 |
+| Parked tracklets: median of per-tracklet median speed (m/s) | 0.379 | gated by the parked-speed test, bar 0.5; worst tracklet 0.660, bar 0.7 | 2 |
+| Lead van and cyclist: median speed error (m/s) | 0.217 / 0.236 | gated by the moving-speed test, bar 0.5 | 2 |
 | Car+Van recall (box-frames) | 0.910 (473 / 520) | no bar by design | 2 |
 | Label coverage: share of in-region track-frames explained by a label | 0.112 (629 / 5624) | no bar by design; a lower bound | 2 |
 | Static accuracy / parked flicker | 0.984 / 0.016 | no bar by design | 2 |
@@ -54,7 +54,7 @@ Offline run over all 154 frames, once with ego compensation and once without, sc
 | Van | 3 | 272 | 232 | 40 | 0.853 | 0.787 (n = 232) | 0.708 (n = 213) |  |
 | **Overall** | 15 | 696 | 629 | 67 | 0.904 | 0.568 (n = 629) | static / moving below |  |
 
-Car+Van recall: 0.910 (473 / 520) (the Phase 2 detection recall used the same 520 box-frames).
+Car+Van recall: 0.910 (473 / 520) (the detection-only recall in detection_recall.json uses the same 520 box-frames).
 
 | Metric | Value | Judged by |
 |---|---|---|
@@ -63,7 +63,7 @@ Car+Van recall: 0.910 (473 / 520) (the Phase 2 detection recall used the same 52
 | Velocity RMSE, moving GT (m/s) | 0.910 (n = 258) | no bar by design |
 | Static accuracy: static GT frames labelled `static` | 0.984 (306 / 311) | no bar by design |
 | Parked flicker: static GT frames labelled `moving` (= 1 - static accuracy) | 0.016 (5 / 311) | no bar by design |
-| Moving-label recall: moving GT frames labelled `moving` | 0.981 (253 / 258) | no bar by design; walkers read `static` by design (D10) |
+| Moving-label recall: moving GT frames labelled `moving` | 0.981 (253 / 258) | no bar by design; walkers read `static` by design (confident motion rule) |
 | ID switches, all tracklets | 6 | no bar by design |
 
 **By tracklet** (frames after the warm-up: speed in m/s, |speed error| against the +-5-frame GT velocity, share labelled `moving`)
@@ -99,7 +99,7 @@ Only tracks with at least 10 frames after the warm-up are scored; shorter ones a
 
 | Metric | Value | Judged by |
 |---|---|---|
-| False-moving rate: unmatched in-region track-frames after the warm-up labelled `moving` | 0.086 (338 / 3925) | no bar by design; the baseline for the Phase 6 fixes |
+| False-moving rate: unmatched in-region track-frames after the warm-up labelled `moving` | 0.086 (338 / 3925) | no bar by design; the baseline for future fixes |
 
 This counts every in-region track-frame that matches no tracklet, including the unmatched frames of tracks that do match a tracklet in other frames (for example when a moving vehicle is briefly missed). It does not assume that unmatched objects are fixed.
 
@@ -127,7 +127,7 @@ The off run tracks in the velodyne frame, so its positions move with the car and
 
 *How to read this:* How every number was computed, and the one command that regenerates this file byte for byte on the same CPU architecture.
 
-- **Matching:** per frame, one-to-one Hungarian assignment on 2D center distance, gate 2.0 m; ground truth of every class in the evaluation region against all confirmed tracks (the Phase 3 matching, unchanged).
+- **Matching:** per frame, one-to-one Hungarian assignment on 2D center distance, gate 2.0 m; ground truth of every class in the evaluation region against all confirmed tracks (the same matching as the tracking speed scores).
 - **Evaluation region:** the processing ROI minus the ego box, front half only (x >= 0 in the velodyne frame). Ground truth is tested on its velodyne center; a track is mapped back to velodyne and tested on x and y (tracks.csv has no z).
 - **Unit:** one ground-truth box-frame. Recall is matched / GT box-frames in the region; matched + missed equals that count.
 - **Static:** a tracklet whose world net speed is below 0.5 m/s (the 10 parked tracklets); every other tracklet is moving.
@@ -136,5 +136,5 @@ The off run tracks in the velodyne frame, so its positions move with the car and
 - **ID switch:** per tracklet, a matched frame whose track ID differs from the previous matched track ID; frames without a match do not reset it.
 - **Unlabelled track:** a track with at least one frame in the region that is never matched to a tracklet. World stillness scores tracks with at least 10 post-warm-up frames.
 - **Zero denominators** print `n/a` with the name of the empty denominator, never 0.
-- **Gate:** only the ablation ratio (at least 3.0) is a pass/fail bar, fixed before the first Phase 4 run.
+- **Gate:** only the ablation ratio (at least 3.0) is a pass/fail bar, fixed before the first evaluation run.
 - **Reproduce:** `docker compose run --rm --no-deps processor python3 /app/scripts/evaluate.py`. Two runs give byte-identical files on the same CPU architecture (verified on arm64 and on x86_64, the latter on a GitHub Actions runner).

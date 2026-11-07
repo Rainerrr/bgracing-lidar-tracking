@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Live checks: markers and E2.6 detection parity (compare), E3.4 track parity and E3.5 loop (tracks), and
-E3.6 output files (files). Needs a live run; compare also needs the offline reference.
+"""Live checks: markers and detection parity (compare), track parity and the dataset loop (tracks), and
+the output files (files). Needs a live run; compare also needs the offline reference.
 
     # 1. offline reference, then the live pipeline
     docker compose run --rm --no-deps processor python3 /app/scripts/run_offline.py
@@ -15,10 +15,10 @@ E3.6 output files (files). Needs a live run; compare also needs the offline refe
 
 compare exits 0 only if every recorded array begins with DELETEALL and matches the live tracks of its (pass,
 stamp) (boxes and labels: one per confirmed track; arrows: one per moving track), and every live frame equals the
-offline detection rows of that frame (E2.6, at least 140 distinct frames).
+offline detection rows of that frame (at least 140 distinct frames).
 tracks exits 0 only if, for every live pass, the offline tracker fed exactly the frames the live node processed
-gives byte-equal tracks.csv rows (E3.4), and the pass changes exactly at wraps with no track surviving one (E3.5).
-files exits 0 only if tracks.csv, metrics.json and the report PNG are complete, parseable and agree (E3.6).
+gives byte-equal tracks.csv rows, and the pass changes exactly at wraps with no track surviving one.
+files exits 0 only if tracks.csv, metrics.json and the report PNG are complete, parseable and agree.
 """
 import argparse
 import json
@@ -90,7 +90,7 @@ def compare(live_dir, offline_dir, markers_path):
           f"-> {'OK' if markers['ok'] else 'FAIL'}")
     for p in markers["problems"][:10]:
         print("   ", p)
-    print(f"E2.6 parity:  {parity['compared']} live (pass, frame) pairs, {parity['distinct_frames']} distinct frames "
+    print(f"detection parity: {parity['compared']} live (pass, frame) pairs, {parity['distinct_frames']} distinct frames "
           f"(need >= {MIN_FRAMES}), {len(parity['mismatched'])} mismatched -> {'OK' if parity['ok'] else 'FAIL'}")
     for m in parity["mismatched"][:10]:
         print("   ", m)
@@ -107,7 +107,7 @@ def compare(live_dir, offline_dir, markers_path):
 
 
 def tracks(live_dir, config_path, data_dir=None):
-    """E3.4 replay parity and E3.5 loop (needs the drive: the replay re-runs detection and tracking)."""
+    """Track replay parity and the loop (needs the drive: the replay re-runs detection and tracking)."""
     from processor import config
     from scripts import run_offline
     live_dir = Path(live_dir)
@@ -123,7 +123,7 @@ def tracks(live_dir, config_path, data_dir=None):
     parity = records.compare_track_parity(records.tracks_by_pass(processed, live_tracks), replay)
     loop = records.check_loop(processed, live_tracks)
     by_pass = records.frames_by_pass(processed)
-    print(f"E3.4 parity: {parity['passes']} live passes, {parity['rows']} track rows, "
+    print(f"track parity: {parity['passes']} live passes, {parity['rows']} track rows, "
           f"{len(parity['mismatched'])} mismatched passes -> {'OK' if parity['ok'] else 'FAIL'}")
     for m in parity["mismatched"][:5]:
         print("   ", m)
@@ -132,21 +132,21 @@ def tracks(live_dir, config_path, data_dir=None):
         print(f"    pass {p}: frames {fs[0]}..{fs[-1]}, processed {len(fs)}, gaps {span - len(fs)}")
     print(f"    clean full passes (frames 0..153, no gap): {metrics.get('clean_passes')}; dropped {metrics.get('frames_dropped')}, "
           f"no_odom {metrics.get('no_odom')}, duplicates {metrics.get('duplicate_stamps')} (reported, not gated)")
-    print(f"E3.5 loop: {loop['wraps']} wraps, {len(loop['problems'])} problems -> {'OK' if loop['ok'] and loop['wraps'] >= 1 else 'FAIL'}")
+    print(f"loop: {loop['wraps']} wraps, {len(loop['problems'])} problems -> {'OK' if loop['ok'] and loop['wraps'] >= 1 else 'FAIL'}")
     for pr in loop["problems"][:5]:
         print("   ", pr)
     return 0 if parity["ok"] and loop["ok"] and loop["wraps"] >= 1 else 1
 
 
 def files(live_dir):
-    """E3.6: the files a stopped run leaves are complete, parseable and agree with each other."""
+    """Output files: the files a stopped run leaves are complete, parseable and agree with each other."""
     import csv
     live_dir = Path(live_dir)
     problems, rows = [], []
     try:
         metrics = json.loads((live_dir / "metrics.json").read_text())
     except (OSError, ValueError) as exc:
-        print(f"E3.6 files: metrics.json unreadable ({exc}) -> FAIL")
+        print(f"output files: metrics.json unreadable ({exc}) -> FAIL")
         return 1
     try:
         with open(live_dir / "tracks.csv", newline="") as fh:
@@ -180,7 +180,7 @@ def files(live_dir):
                 problems.append(f"report PNG decodes to shape {img.shape}")
     except Exception as exc:  # any decoding failure is the finding
         problems.append(f"report PNG unreadable: {exc!r}")
-    print(f"E3.6 files: tracks.csv {max(len(rows) - 1, 0)} rows, metrics.json processed "
+    print(f"output files: tracks.csv {max(len(rows) - 1, 0)} rows, metrics.json processed "
           f"{metrics.get('frames_processed')}, PNG {png.stat().st_size if png.is_file() else 0} bytes; "
           f"{len(problems)} problems -> {'OK' if not problems else 'FAIL'}")
     for pr in problems:

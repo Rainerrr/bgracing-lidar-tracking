@@ -2,5 +2,8 @@
 data
 output
 docs
+internal
+.claude
+CLAUDE.md
 **/__pycache__
 **/.pytest_cache

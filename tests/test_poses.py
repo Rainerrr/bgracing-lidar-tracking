@@ -1,4 +1,4 @@
-"""E1.1 pose math (synthetic) and the calibration-direction known-answer test (real calibration)."""
+"""Pose math (synthetic) and the calibration-direction known-answer test (real calibration)."""
 import numpy as np
 import pytest
 
@@ -149,7 +149,7 @@ def test_real_ego_speed_matches_oxts(drive):
     assert 3.0 < oxts_speed.min() and oxts_speed.max() < 6.6
 
 
-# ---------------------------------------------------------------- Phase 3: carried pose path
+# ---------------------------------------------------------------- carried pose path
 
 def test_quat_to_rot_inverts_rot_to_quat_on_every_branch():
     for R in (np.eye(3), TILTED, poses.rotation_rpy(0.0, 0.0, np.pi), poses.rotation_rpy(np.pi, 0.1, 0.0),

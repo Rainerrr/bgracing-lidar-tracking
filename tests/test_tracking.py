@@ -1,4 +1,4 @@
-"""E3.1 tracker unit tests on synthetic targets (no data, no ROS). Bars from phase-3 FEATURE_SPEC D9."""
+"""Tracker unit tests on synthetic targets (no data, no ROS). Bars fixed before the tracker was written."""
 import dataclasses
 import subprocess
 import sys
@@ -40,7 +40,7 @@ def target(n, v=5.0, noise=0.0, seed=0):
     return pos
 
 
-# ---------------------------------------------------------------- convergence (D9)
+# ---------------------------------------------------------------- convergence
 
 def test_noise_free_target_reads_within_0_05_from_frame_10():
     out = run(target(51))
@@ -71,23 +71,6 @@ def test_crossing_targets_keep_their_ids():
     ids_a = {next(t.track_id for t in out[f] if t.x < 0.5) for f in range(5, 41)}
     ids_b = {next(t.track_id for t in out[f] if t.x >= 0.5) for f in range(5, 41)}
     assert len(ids_a) == 1 and len(ids_b) == 1 and ids_a != ids_b
-
-
-def _tracker_with(positions, params):
-    tr = Tracker(params)
-    for x, y in positions:
-        tr.tracks.append(tracking._Track(det(x, y), params))
-    return tr
-
-
-def test_greedy_differs_from_hungarian_on_a_documented_case():
-    """Tracks at x=0 and x=1; detections at 0.9 and 2.5. Greedy takes the closest pair (track 1, 0.9) first and
-    leaves track 0 with nothing in its gate; Hungarian matches both (0 -> 0.9, 1 -> 2.5)."""
-    dets = [det(0.9, 0.0), det(2.5, 0.0)]
-    hung = _tracker_with([(0.0, 0.0), (1.0, 0.0)], P)._associate(dets)
-    greedy = _tracker_with([(0.0, 0.0), (1.0, 0.0)], dataclasses.replace(P, association="greedy"))._associate(dets)
-    assert hung == [(0, 0), (1, 1)]
-    assert greedy == [(1, 0)]
 
 
 @pytest.mark.parametrize("offset,same", [(1.99, True), (2.01, False)])
@@ -187,7 +170,7 @@ def test_confident_motion_state_fast_target_is_moving_almost_at_once():
 
 
 def test_confident_motion_state_stationary_noisy_target_is_never_moving():
-    """D10: a 0.3 m-noise stationary target can read above 0.7 m/s, but never confidently."""
+    """Confident rule: a 0.3 m-noise stationary target can read above 0.7 m/s, but never confidently."""
     assert set(states(0.0, noise=0.3).values()) == {"static"}
 
 
@@ -198,7 +181,7 @@ def test_confident_motion_state_young_tracks_wait_for_certainty():
 
 
 def test_confident_motion_state_documented_cost_a_1_m_s_walker_stays_static():
-    """D10 tradeoff: sigma settles near 0.31 m/s, so the steady threshold is about 0.7 + 2 x 0.31 = 1.32 m/s."""
+    """Confident-rule tradeoff: sigma settles near 0.31 m/s, so the steady threshold is about 0.7 + 2 x 0.31 = 1.32 m/s."""
     tr = Tracker(P)
     for f, ps in enumerate(target(60, v=1.0)):
         out = tr.step(f, stamp(f), [det(*q) for q in ps])

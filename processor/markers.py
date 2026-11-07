@@ -47,7 +47,7 @@ def box_markers(header, detections):
     return arr
 
 
-# ---------------------------------------------------------------- Phase 3: tracks (world frame)
+# ---------------------------------------------------------------- tracks (world frame)
 
 _STATE_RGB = {"moving": (1.0, 0.55, 0.0), "static": (0.55, 0.65, 0.8)}  # color is redundant: the label states it
 ARROW_SECONDS = 0.5  # arrow length = speed x 0.5 s
@@ -108,7 +108,7 @@ def track_markers(header, tracks, R_frame_velo, pass_no=0):
     return boxes, arrows, labels
 
 
-# ---------------------------------------------------------------- Phase 5: ego car (velodyne frame)
+# ---------------------------------------------------------------- ego car (velodyne frame)
 
 # Approximate KITTI ego car (a VW Passat wagon) relative to the LiDAR. The sensor sits 1.73 m above the ground
 # (the calibration-direction test pins this); the body outline is NOT measured: the cloud has no returns on

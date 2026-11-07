@@ -1,4 +1,4 @@
-"""E2.2 matching function on hand-built cases (shared with Phase 4)."""
+"""The matching function on hand-built cases (shared with the evaluation)."""
 from types import SimpleNamespace as NS
 
 import numpy as np

@@ -1,4 +1,4 @@
-"""E5.7: the README keeps the spec's outline, its links and images resolve, its commands are the real ones, and its
+"""The README keeps its outline, its links and images resolve, its commands are the real ones, and its
 headline numbers are the ones in the committed samples. Needs the repo mounted read-only at REPO_DIR (verify.sh
 does this); without it the tests fail, they never skip."""
 import json
@@ -36,14 +36,23 @@ def local_links(text):
             yield target.split("#", 1)[0]
 
 
-@pytest.mark.parametrize("doc", ["README.md", "docs/spec.md"])
-def test_links_and_images_resolve_and_avoid_local_only_folders(doc):
+@pytest.fixture(scope="module")
+def tracked():
+    listing = os.environ.get("TRACKED_LIST")
+    assert listing and Path(listing).is_file(), "no file list: run through scripts/verify.sh, which writes it"
+    return {ln for ln in Path(listing).read_text(encoding="utf-8").splitlines() if ln}
+
+
+@pytest.mark.parametrize("doc", ["README.md", "docs/design.md"])
+def test_links_and_images_resolve_and_avoid_local_only_folders(doc, tracked):
     path = REPO / doc
     assert path.is_file(), f"{path} not found"
     base = path.parent
     for target in local_links(path.read_text(encoding="utf-8")):
         assert (base / target).exists(), f"{doc}: broken link {target}"
-        assert "docs/specs" not in target, f"{doc}: links into the git-ignored docs/specs: {target}"
+        rel = os.path.relpath(os.path.normpath(base / target), REPO)
+        assert rel in tracked or any(t.startswith(rel.rstrip("/") + "/") for t in tracked), \
+            f"{doc}: links to {target}, which is not part of the repository"
 
 
 def test_documented_commands_are_the_real_ones(readme):
@@ -71,7 +80,7 @@ def test_headline_numbers_match_the_samples(readme):
     assert cv and f"{cv.group(2)} of {cv.group(3)}" in readme and cv.group(1) in readme
 
 
-# ---------------------------------------------------------------- stricter checks (review W2)
+# ---------------------------------------------------------------- the README quotes the samples
 
 def _samples():
     d = REPO / "docs" / "samples"

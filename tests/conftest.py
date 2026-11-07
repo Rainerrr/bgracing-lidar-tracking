@@ -127,7 +127,7 @@ def params():
 
 @pytest.fixture(scope="session")
 def runs(tmp_path_factory, drive, params):
-    """Four offline runs on the real drive, shared by the Phase 3 and Phase 4 tests (session scope: built once)."""
+    """Four offline runs on the real drive, shared by the tracking and evaluation tests (session scope: built once)."""
     import dataclasses
     from scripts import run_offline
     variants = {
@@ -139,7 +139,7 @@ def runs(tmp_path_factory, drive, params):
     return {name: run_offline.run(p, tmp_path_factory.mktemp(name), data_dir=DATA_DIR) for name, p in variants.items()}
 
 
-# ---------------------------------------------------------------- synthetic clouds (Phase 2)
+# ---------------------------------------------------------------- synthetic clouds (perception tests)
 
 def plane_patch(x0, x1, y0, y1, z0=-1.7, tilt_deg=0.0, step=0.1):
     """Dense plane patch; z = z0 + y * tan(tilt), i.e. tilted about the x axis."""

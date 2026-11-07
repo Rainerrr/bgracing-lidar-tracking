@@ -1,13 +1,13 @@
 """obstacle_tracking_report.png: top-down map of the tracks of one pass. ROS-free (matplotlib, Agg).
 
-Static vs moving is carried by line style and legend text, never by color alone (phase-3 FEATURE_SPEC D7):
+Static vs moving is carried by line style and legend text, never by color alone:
 - static tracks: thin, dashed, grey, under ONE legend entry with their count (clutter makes dozens of them);
 - moving tracks: solid, named by ID in the legend, labelled at their last position, with a velocity arrow.
-A track is drawn as moving if the tracker labelled it "moving" (the confident rule, FEATURE_SPEC D10) in at
+A track is drawn as moving if the tracker labelled it "moving" (the confident motion rule) in at
 least half of its rows, so a parked car labelled moving in a few frames is still drawn as static.
 Ground-truth tags (offline only): tracks matched to a KITTI tracklet that really moves are tagged "GT #n Class"
 on the map and in the legend, listed first, and a footnote says the labels come from the ground truth: the
-processor classifies nothing. A tagged track the tracker labels static (a walker, D10) is drawn black and dash-dotted.
+processor classifies nothing. A tagged track the tracker labels static (a walker, by the confident rule) is drawn black and dash-dotted.
 Byte-stable for the same input on one architecture: no PNG metadata, fixed size and DPI.
 """
 from collections import defaultdict

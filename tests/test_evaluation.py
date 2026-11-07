@@ -1,4 +1,4 @@
-"""E4.3: the Phase 4 metric functions on hand-built cases (no data, no ROS). Identity poses unless stated.
+"""The evaluation metric functions on hand-built cases (no data, no ROS). Identity poses unless stated.
 
 Scene: GT tracklets are static boxes in front of the car (x = 10 m, inside the evaluation region), tracked by
 confirmed tracks at the same place. warmup_frames is 5 (config), so frames 0-4 of a track are warm-up.
@@ -153,14 +153,14 @@ def test_without_ego_compensation_tracks_are_already_in_velodyne_and_gt_velocity
     off = dataclasses.replace(params, ego_compensation=False)
     e = run(still(1, 10.0, 0.0), car, off)
     assert e["tracking_frame"] == "velodyne" and e["recall"]["overall"]["value"] == 1.0
-    # the tracker in the velodyne frame sees a parked car streaming past at 5 m/s: that is the error D10 measures
+    # the tracker in the velodyne frame sees a parked car streaming past at 5 m/s: that is the error the uncompensated velocity RMSE measures
     rows = still(1, 10.0, 0.0, vx=-5.0)
     assert run(rows, car, off)["velocity"]["rmse_static"]["value"] == pytest.approx(5.0)
 
 
 def test_without_ego_compensation_the_gt_velocity_is_rotated_into_velodyne_axes(params):
     """The ego is turned 90 degrees (velodyne x = world y). A GT car moving 5 m/s east in the world frame streams
-    along -y in the velodyne axes; a tracker reading exactly that has zero error only if GT is rotated (D10)."""
+    along -y in the velodyne axes; a tracker reading exactly that has zero error only if GT is rotated into velodyne axes."""
     off = dataclasses.replace(params, ego_compensation=False)
     T = np.tile(np.eye(4), (N, 1, 1))
     T[:, :2, :2] = [[0.0, -1.0], [1.0, 0.0]]  # R = Rz(+90): p_world = R p_velodyne
@@ -173,7 +173,7 @@ def test_without_ego_compensation_the_gt_velocity_is_rotated_into_velodyne_axes(
     assert run(wrong, car_y, off, T=T)["velocity"]["rmse_moving"]["value"] == pytest.approx(np.hypot(5.0, 5.0), abs=1e-6)
 
 
-# ---------------------------------------------------------------- world stillness (D15)
+# ---------------------------------------------------------------- world stillness
 
 def test_world_stillness_counts_scored_and_excluded_unlabelled_tracks(params, car):
     far_still = still(2, 20.0, 10.0, range(15))  # post-warm-up rows: frames 5-14 = 10, scored
@@ -226,10 +226,10 @@ def test_per_class_rows_flag_small_samples_and_count_missed(params, car):
     assert pc["Car"]["num"] == N
     assert e["recall"]["overall"]["den"] == pc["Car"]["den"] + pc["Pedestrian"]["den"]
     for c in pc.values():
-        assert c["num"] + c["missed"] == c["den"]  # E4.2: matched + missed = GT box-frames in the region
+        assert c["num"] + c["missed"] == c["den"]  # consistency: matched + missed = GT box-frames in the region
 
 
-# ---------------------------------------------------------------- the ablation gate (D1)
+# ---------------------------------------------------------------- the ablation gate
 
 def _eval_with(rmse):
     return {"velocity": {"rmse_static": {"value": rmse}}}
@@ -250,7 +250,7 @@ def test_ablation_with_no_measurable_rmse_fails_instead_of_dividing_by_zero():
     assert not evaluation.ablation(_eval_with(0.0), _eval_with(5.0))["pass"]
 
 
-# ---------------------------------------------------------------- rendering on degenerate input (E4.7)
+# ---------------------------------------------------------------- rendering on degenerate input
 
 def test_an_empty_run_renders_a_complete_file_with_named_zero_denominators(params, car):
     off = dataclasses.replace(params, ego_compensation=False)
@@ -258,13 +258,13 @@ def test_an_empty_run_renders_a_complete_file_with_named_zero_denominators(param
     abl = evaluation.ablation(on_e, off_e)
     text = evaluation.render(on_e, off_e, abl, evaluation.render_meta(params))
     assert [h for h in text.splitlines() if h.startswith("## ")] == ["## " + h for h in evaluation.PARTS]
-    assert "**Gate (D1): FAIL.**" in text
+    assert "**Gate: FAIL.**" in text
     assert "n/a (confirmed track-frames in the region = 0)" in text
     assert "None" not in text and "nan" not in text.lower().replace("n/a", "")
     assert text == evaluation.render(on_e, off_e, abl, evaluation.render_meta(params))  # still deterministic
 
 
-# ---------------------------------------------------------------- review repairs (Nov 6)
+# ---------------------------------------------------------------- edge cases
 
 def test_the_track_to_velodyne_mapping_uses_the_transpose_of_the_rotation(params, car):
     """Ego turned 90 degrees at world (100, 0): p_world = Rz(90) p_velodyne + t. The car at velodyne (10, 0) is at

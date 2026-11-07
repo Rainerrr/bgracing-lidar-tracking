@@ -7,13 +7,13 @@
 Writes to /output/offline (/output/offline/no_ego with ego compensation off; never the live output folder):
   detections.csv, frames.csv       deterministic per-frame rows (what the live node also writes)
   detection_recall.json            deterministic recall summary against the tracklets
-  tracks.csv                       confirmed tracks per frame (contract in docs/spec.md; pass is 0 offline)
-  tracking_speeds.json             deterministic E3.2/E3.3 speed summary against the tracklets
+  tracks.csv                       confirmed tracks per frame (columns as in the README; pass is 0 offline)
+  tracking_speeds.json             deterministic speed summary (parked and moving) against the tracklets
   obstacle_tracking_report.png     top-down map of the tracks (byte-stable per architecture)
   metrics.json                     timing, platform, seed, parameters, track counts (not byte-stable, never hashed)
 
 Poses: each frame's world -> velodyne pose goes through core.poses.carried_pose, the same float path the live
-node takes from the odom message, so live and offline tracks can be compared byte for byte (E3.4).
+node takes from the odom message, so live and offline tracks can be compared byte for byte.
 """
 import argparse
 import dataclasses
@@ -44,7 +44,7 @@ def tracking_pose(T_carried, frame, params):
 
 
 def replay(params, frames_by_pass, data_dir=None):
-    """E3.4: the tracker fed exactly the given frames, a fresh state per pass. {pass: [tracks.csv rows]}."""
+    """Track replay: the tracker fed exactly the given frames, a fresh state per pass. {pass: [tracks.csv rows]}."""
     drive = kitti.load_drive(data_dir or params.data_dir, params.drive)
     T_c = carried_poses(drive)
     out = {}

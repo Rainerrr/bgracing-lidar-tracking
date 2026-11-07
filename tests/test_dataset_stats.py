@@ -1,4 +1,4 @@
-"""E1.4 dataset statistics: runs without the publisher, deterministic, complete, degrades without ground truth."""
+"""Dataset statistics: runs without the publisher, deterministic, complete, degrades without ground truth."""
 import hashlib
 import importlib.util
 import json

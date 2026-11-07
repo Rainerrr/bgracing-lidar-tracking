@@ -1,5 +1,5 @@
-"""Phase 4 on the real drive (offline, 154 frames): E4.2 consistency, E4.4 ablation gate, E4.6 cross-check with the
-Phase 3 speed summary. Uses the session-scoped `runs` fixture of tests/conftest.py. Fails, never skips, without ./data."""
+"""The evaluation on the real drive (offline, 154 frames): consistency, the ablation gate, and a cross-check with the
+tracking speed summary. Uses the session-scoped `runs` fixture of tests/conftest.py. Fails, never skips, without ./data."""
 import dataclasses
 import math
 import re
@@ -13,7 +13,7 @@ from processor import evaluation, track_scoring
 from conftest import SAMPLES_DIR
 
 N_FRAMES = 154
-CAR_VAN_BOX_FRAMES = 520  # the denominator of the Phase 2 recall
+CAR_VAN_BOX_FRAMES = 520  # the denominator of the detection recall
 
 
 @pytest.fixture(scope="module")
@@ -44,9 +44,9 @@ def walk(obj):
         yield obj
 
 
-# ---------------------------------------------------------------- E4.2 consistency
+# ---------------------------------------------------------------- consistency
 
-def test_the_static_tracklets_are_the_e1_2_parked_fixture(inputs):
+def test_the_static_tracklets_are_the_parked_fixture(inputs):
     gt, T_wv, stamps = inputs
     assert evaluation.static_tracklets(gt, T_wv, stamps) == set(track_scoring.PARKED)
 
@@ -97,12 +97,12 @@ def test_every_number_is_finite_and_every_missing_one_names_its_zero_denominator
 def test_the_compensated_run_has_the_expected_shape(ev):
     e = ev["on"]
     assert e["tracking_frame"] == "world"
-    assert e["recall"]["car_van"]["value"] >= 0.8  # Phase 2's bar on the same frames; tracks follow detections
-    assert 0 < e["coverage"]["value"] < 0.5  # most tracks have no KITTI label: coverage is a lower bound (D14)
-    assert e["stillness"]["unlabelled"]["scored"] > 50  # enough unlabelled tracks to say something (D15)
+    assert e["recall"]["car_van"]["value"] >= 0.8  # the detection recall bar on the same frames; tracks follow detections
+    assert 0 < e["coverage"]["value"] < 0.5  # most tracks have no KITTI label: coverage is a lower bound
+    assert e["stillness"]["unlabelled"]["scored"] > 50  # enough unlabelled tracks to say something
 
 
-# ---------------------------------------------------------------- E4.4 ablation gate (D1)
+# ---------------------------------------------------------------- the ablation gate
 
 def test_without_ego_compensation_static_velocity_error_is_at_least_three_times_larger(ev):
     abl = evaluation.ablation(ev["on"], ev["no_ego"])
@@ -121,10 +121,10 @@ def test_the_uncompensated_run_labels_parked_objects_moving(ev):
     assert ev["on"]["labels"]["flicker"]["value"] < 0.1
 
 
-# ---------------------------------------------------------------- E4.6 cross-check with Phase 3
+# ---------------------------------------------------------------- cross-check with the tracking speed summary
 
 def cross_check(e, speeds):
-    """Mismatches between an evaluation and the Phase 3 speed summary of the same run (same matching, warm-up)."""
+    """Mismatches between an evaluation and the tracking speed summary of the same run (same matching, warm-up)."""
     bad = []
     for tid, v in speeds["parked"]["tracklets"].items():
         t = e["tracklets"].get(int(tid))
@@ -142,7 +142,7 @@ def cross_check(e, speeds):
 
 
 @pytest.mark.parametrize("run", ["on", "no_ego"])
-def test_speeds_equal_the_phase_3_summary(runs, ev, run):
+def test_speeds_equal_the_tracking_speed_summary(runs, ev, run):
     """The van and cyclist median speed error and each parked tracklet's median speed and moving share are the
     numbers in tracking_speeds.json (same matching, same warm-up, same tracks)."""
     assert cross_check(ev[run], runs[run]["speeds"]) == []
@@ -161,7 +161,7 @@ def test_parked_flicker_is_the_pooled_share_moving_of_the_parked_tracklets(ev):
     assert e["labels"]["flicker"]["num"] == moving and e["labels"]["flicker"]["den"] == scored
 
 
-# ---------------------------------------------------------------- E4.1 determinism, E4.2b structure (D13)
+# ---------------------------------------------------------------- determinism, structure
 
 HEADINGS = ["## " + h for h in evaluation.PARTS]
 
@@ -202,7 +202,7 @@ def test_the_six_parts_come_in_order_each_with_a_reading_note(text):
     for i in at:
         following = [ln for ln in lines[i + 1:] if ln.strip()][0]
         assert following.startswith(evaluation.READ_PREFIX) and len(following) > len(evaluation.READ_PREFIX) + 40
-        assert len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", following[len(evaluation.READ_PREFIX):])) <= 3  # D13: 1-3 sentences
+        assert len(re.split(r"(?<=[.!?])\s+(?=[A-Z])", following[len(evaluation.READ_PREFIX):])) <= 3  # 1-3 sentences per reading note
 
 
 def test_no_number_is_called_a_false_positive_and_part_3_says_consistency_not_correctness(text):
@@ -211,7 +211,7 @@ def test_no_number_is_called_a_false_positive_and_part_3_says_consistency_not_co
     part3 = text.split(HEADINGS[3])[1].split(HEADINGS[4])[0]
     assert "consistency, not correctness" in part3
     assert "Excluded (< 10 frames)" in part3  # survivorship is printed beside the result
-    assert "probably" in part3 and "nothing here classifies them" in part3  # D15: no claim of what the tracks are
+    assert "probably" in part3 and "nothing here classifies them" in part3  # no claim of what the tracks are
     assert "does not assume that unmatched objects are fixed" in part3 and "including the unmatched frames of tracks" in part3
     assert "directly comparable" in part3  # object size biases the box-center drift of the two rows
     assert "main result" in text.split(HEADINGS[4])[1].split(HEADINGS[5])[0]  # the gate passed on the real drive
@@ -221,15 +221,15 @@ def test_every_row_that_is_not_gated_says_so(text):
     assert text.count("no bar by design") >= 10
     gated = [ln for ln in text.splitlines() if "**gated" in ln]
     assert len(gated) == 2  # the velocity RMSE row and the ratio row of part 4
-    assert "**Gate (D1): PASS.**" in text
+    assert "**Gate: PASS.**" in text
 
 
-def test_the_summary_quotes_the_phase_3_bars_from_the_same_run(text):
+def test_the_summary_quotes_the_tracking_bars_from_the_same_run(text):
     summary = text.split(HEADINGS[0])[1].split(HEADINGS[1])[0]
-    assert "gated in Phase 3 (E3.2)" in summary and "gated in Phase 3 (E3.3)" in summary
+    assert "gated by the parked-speed test" in summary and "gated by the moving-speed test" in summary
 
 
-# ---------------------------------------------------------------- E4.5 committed samples match a fresh run (D4)
+# ---------------------------------------------------------------- committed samples match a fresh run
 
 def sample_mismatch(name, fresh, samples_dir=SAMPLES_DIR):
     """None if docs/samples/<name> equals the fresh bytes, else the reason. A missing sample is a mismatch."""

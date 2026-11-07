@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live tracking node (Phase 3): sweep and ego pose in, tracked obstacles out.
+"""Live tracking node: sweep and ego pose in, tracked obstacles out.
 
 Subscribes to /sensor/lidar/raw_points (best effort, newest only: a slow frame never builds a backlog) and
 /sensor/ego/odom (reliable). Each cloud is paired with the odom message of the same stamp; a cloud without
@@ -12,7 +12,7 @@ DELETEALL. Writes detections.csv, frames.csv, tracks.csv and metrics.json every 
 and on the stop signal; obstacle_tracking_report.png on the stop signal only (a render takes hundreds of ms).
 
 Time: a backward stamp is the dataset loop (pass + 1, tracker reset); a duplicate stamp is skipped and counted;
-a forward gap is handled by the tracker as misses (FEATURE_SPEC D4). Wall time is used only for timing.
+a forward gap is handled by the tracker as misses, so a stall never resets it. Wall time is used only for timing.
 """
 import dataclasses
 import os
