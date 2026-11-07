@@ -1,4 +1,4 @@
-"""Ground-truth matching and the detection recall summary. ROS-free (numpy, scipy). Reused by Phase 4.
+"""Ground-truth matching and the detection recall summary. ROS-free (numpy, scipy). Reused by the evaluation.
 
 Per frame: one-to-one Hungarian assignment on 2D center distance with a 2.0 m gate. Ground truth of
 every class in the evaluation region takes part in the assignment, so a detection on a pedestrian

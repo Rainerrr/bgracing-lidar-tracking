@@ -1,4 +1,4 @@
-"""E1.1 data layer: timestamps, sweeps, OXTS, calibration, tracklets, failure paths, pinned inputs."""
+"""Data layer: timestamps, sweeps, OXTS, calibration, tracklets, failure paths, pinned inputs."""
 import hashlib
 import os
 import subprocess

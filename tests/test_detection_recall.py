@@ -1,4 +1,4 @@
-"""E2.2 offline recall and E2.3 determinism, on the real drive (154 frames). Fails, never skips, without ./data."""
+"""Offline detection recall and determinism, on the real drive (154 frames). Fails, never skips, without ./data."""
 import dataclasses
 import hashlib
 import json
@@ -14,7 +14,7 @@ from conftest import DATA_DIR
 
 FILES = ("detections.csv", "frames.csv", "detection_recall.json")
 RECALL_BAR = 0.8
-CAR_VAN_BOX_FRAMES = 520  # Car 248 + Van 272 in the evaluation region (EVIDENCE/pre-spec-gt-facts.txt)
+CAR_VAN_BOX_FRAMES = 520  # Car 248 + Van 272 in the evaluation region (counted from the tracklets before any detection code ran)
 
 
 def sha(path):

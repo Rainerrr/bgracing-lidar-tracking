@@ -1,4 +1,4 @@
-"""E4.7: scripts/evaluate.py failure paths and its output (synthetic drive, no real data needed)."""
+"""scripts/evaluate.py failure paths and its output (synthetic drive, no real data needed)."""
 import subprocess
 import sys
 from pathlib import Path
@@ -54,7 +54,7 @@ def test_a_synthetic_drive_writes_a_complete_file_and_exits_0_even_though_the_ga
     assert "-> FAIL" in r.stdout
     text = (tmp_path / "evaluation.md").read_text()
     assert [ln for ln in text.splitlines() if ln.startswith("## ")][0] == "## 0. Summary" and "## 5. Method and reproducibility" in text
-    assert "**Gate (D1): FAIL.**" in text and "n/a (" in text
+    assert "**Gate: FAIL.**" in text and "n/a (" in text
     assert (tmp_path / "offline" / "tracks.csv").is_file() and (tmp_path / "offline" / "no_ego" / "tracks.csv").is_file()
     assert not list(tmp_path.glob("*.tmp"))  # written atomically
 

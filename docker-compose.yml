@@ -11,5 +11,5 @@ services:
     volumes: ["./data:/data:ro", "./config:/config:ro", "./output:/output"]
     ports: ["127.0.0.1:8765:8765"]  # bridge has no auth: localhost only
     stop_signal: SIGINT  # ros2 launch shuts its nodes down cleanly on SIGINT, not on SIGTERM
-    stop_grace_period: 10s  # final tracks.csv, metrics.json and report PNG must be written within this (E3.6)
+    stop_grace_period: 10s  # final tracks.csv, metrics.json and report PNG must be written within this
     depends_on: [publisher]

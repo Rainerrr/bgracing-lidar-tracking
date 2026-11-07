@@ -55,7 +55,7 @@ def test_missing_tracklets_still_writes_detections(make_drive, tmp_path):
     assert r.returncode == 0 and "ground truth missing" in r.stderr
     assert json.loads((out / "detection_recall.json").read_text())["ground_truth"] == "missing"
     assert (out / "detections.csv").is_file() and (out / "metrics.json").is_file()
-    # Phase 3: tracks and the report are still written; the speed summary says ground truth is missing
+    # tracks and the report are still written; the speed summary says ground truth is missing
     assert (out / "tracks.csv").read_text().splitlines()[0] == "pass,frame,stamp_ns,track_id,x,y,vx,vy,speed,state,l,w,h"
     assert json.loads((out / "tracking_speeds.json").read_text())["ground_truth"] == "missing"
     assert (out / "obstacle_tracking_report.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

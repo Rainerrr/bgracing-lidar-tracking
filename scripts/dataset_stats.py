@@ -9,7 +9,7 @@ The JSON is the checked artifact: sorted keys, fixed histogram edges and rounded
 floats, so two runs give byte-identical files. If tracklet_labels.xml is missing,
 the stats still run and say "ground_truth": "missing".
 
-Phase 2 adds the per-stage point counts, computed by the same perception core the live node uses.
+It also reports the per-stage point counts, computed by the same perception core the live node uses.
 """
 import argparse
 import hashlib

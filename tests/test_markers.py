@@ -1,4 +1,4 @@
-"""E2.5 node-side marker construction: DELETEALL first, one box and one text label per detection."""
+"""Node-side marker construction: DELETEALL first, one box and one text label per detection."""
 from types import SimpleNamespace as NS
 
 from std_msgs.msg import Header
@@ -35,7 +35,7 @@ def test_one_box_and_one_label_per_detection():
     assert len({(m.ns, m.id) for m in arr.markers[1:]}) == 4
 
 
-# ---------------------------------------------------------------- Phase 3: track markers
+# ---------------------------------------------------------------- track markers
 
 import math  # noqa: E402
 

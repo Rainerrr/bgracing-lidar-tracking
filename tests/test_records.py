@@ -1,4 +1,4 @@
-"""Row formats, statistics and the live-checker comparers (E2.3 formatting, E2.5 and E2.6 negative controls)."""
+"""Row formats, statistics and the live-checker comparers (deterministic formatting, marker and parity negative controls)."""
 import json
 from types import SimpleNamespace as NS
 
@@ -45,7 +45,7 @@ def test_atomic_write_leaves_no_temp_file(tmp_path):
     assert (tmp_path / "sub" / "m.json").read_text() == "{}" and not list((tmp_path / "sub").glob("*.tmp"))
 
 
-# ---------------------------------------------------------------- live files and parity (E2.6)
+# ---------------------------------------------------------------- live files and detection parity
 
 def write_live(tmp_path, frames):
     """frames: [(pass, frame, stamp, result, [det])] -> live-format files."""
@@ -98,7 +98,7 @@ def test_parity_needs_enough_frames(tmp_path):
     assert not rec.compare_parity({}, offline)["ok"]
 
 
-# ---------------------------------------------------------------- marker checker (E2.5)
+# ---------------------------------------------------------------- marker checker
 
 def arr(stamp, boxes, first=rec.DELETEALL, texts=None):
     texts = boxes if texts is None else texts
@@ -136,7 +136,7 @@ def test_marker_checker_flags_a_stamp_with_different_counts_across_passes(tmp_pa
     assert "differ across passes" in rec.compare_markers([arr(1000, 1)], live)["problems"][0]["problem"]
 
 
-# ---------------------------------------------------------------- Phase 3: track parity and loop
+# ---------------------------------------------------------------- track parity and loop
 
 def rows(p, f, ids):
     return [f"{p},{f},{1000 + f},{i},0.0000,0.0000,0.0000,0.0000,0.0000,static,1.0000,1.0000,1.0000" for i in ids]
@@ -147,7 +147,7 @@ def test_track_parity_ok_and_control_a_removed_frame_fails():
     live = {(0, 7): rows(0, 7, [1]), (0, 8): rows(0, 8, [1])}
     by_pass = rec.tracks_by_pass(processed, live)
     assert rec.compare_track_parity(by_pass, {0: rows(0, 7, [1]) + rows(0, 8, [1])})["ok"]
-    # E3.4 control: a replay missing one processed frame confirms later and differs
+    # track parity control: a replay missing one processed frame confirms later and differs
     out = rec.compare_track_parity(by_pass, {0: rows(0, 8, [1])})
     assert not out["ok"] and out["mismatched"][0]["first_difference_row"] == 0
 
@@ -157,7 +157,7 @@ def test_loop_ok_on_wraps_and_flags_a_surviving_track():
     live = {(1, 2): rows(1, 2, [1])}
     assert rec.check_loop(processed, live) == {"passes": 3, "wraps": 2, "problems": [], "ok": True}
     stale = dict(live)
-    stale[(1, 0)] = rows(1, 0, [7])  # E3.5 control: a track on the first frame of a pass
+    stale[(1, 0)] = rows(1, 0, [7])  # loop control: a track on the first frame of a pass
     assert not rec.check_loop(processed, stale)["ok"]
 
 

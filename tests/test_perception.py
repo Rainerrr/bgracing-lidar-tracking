@@ -1,4 +1,4 @@
-"""E2.1: perception core on synthetic clouds (no data, no ROS), each check with a negative control."""
+"""Perception core on synthetic clouds (no data, no ROS), each check with a negative control."""
 import dataclasses
 
 import numpy as np
@@ -265,7 +265,7 @@ def test_oriented_extents_degenerate_inputs():
     assert length == pytest.approx(10.0, abs=1e-6) and width == pytest.approx(0.0, abs=1e-6)
 
 
-# ---------------------------------------------------------------- local ground tiles (Phase 2, decided Nov 6)
+# ---------------------------------------------------------------- local ground tiles
 
 def ramp(x0, x1, y0, y1, slope_deg, z0=-1.7, x_ref=20.0, step=0.1):
     """Ground that rises along x from x_ref at slope_deg (flat before it is not generated here)."""

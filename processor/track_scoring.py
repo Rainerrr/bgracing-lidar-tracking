@@ -1,9 +1,9 @@
-"""Speed scoring of tracks against KITTI tracklets (E3.2, E3.3; reused by Phase 4). ROS-free.
+"""Speed scoring of tracks against KITTI tracklets: parked speeds and moving-object errors (reused by the evaluation). ROS-free.
 
-Method (phase-3 FEATURE_SPEC D1, D2 and the engineering decisions):
+Method (fixed before any tracking result):
 - GT velocity: centered difference of the tracklet's world-frame centers over +-GT_HALF_WINDOW frames (1 s),
   shortened at the tracklet's ends. Differencing over +-1 frame makes parked cars read 0.24-0.45 m/s from
-  label jitter alone (EVIDENCE/pre-spec-speeds.txt).
+  label jitter alone.
 - Per frame, confirmed tracks are matched one-to-one to the GT boxes in the evaluation region (processing ROI
   and x >= 0, tested on the GT center in velodyne) with matching.match (Hungarian, 2.0 m gate), on centers in
   the tracking frame: world, or velodyne when ego compensation is off.
@@ -19,11 +19,11 @@ from core import poses
 from processor import matching
 
 GT_HALF_WINDOW = 5
-PARKED = (3, 5, 6, 7, 8, 9, 10, 11, 13, 14)  # the E1.2 fixture: world net speed < 0.5 m/s
+PARKED = (3, 5, 6, 7, 8, 9, 10, 11, 13, 14)  # the parked tracklets: world net speed < 0.5 m/s
 MOVING = (0, 1)  # lead van, cyclist
-PARKED_BAR_MEDIAN = 0.5  # D1: median over the parked tracklets of each tracklet's median speed (m/s)
-PARKED_BAR_EACH = 0.7  # D1: every parked tracklet's median speed; = moving_speed
-MOVING_BAR = 0.5  # D2: per object, median |filtered speed - GT speed| (m/s)
+PARKED_BAR_MEDIAN = 0.5  # bar: median over the parked tracklets of each tracklet's median speed (m/s)
+PARKED_BAR_EACH = 0.7  # bar: every parked tracklet's median speed; = moving_speed
+MOVING_BAR = 0.5  # bar: per object, median |filtered speed - GT speed| (m/s)
 SMALL_SAMPLE_CLASSES = ("Pedestrian", "Cyclist")
 
 
@@ -79,7 +79,7 @@ def _matches(rows, gt_boxes, T_wv, p):
 
 
 def gt_net_speed(gt_boxes, T_wv, stamps_ns):
-    """{tracklet id: world net speed (first-to-last displacement / time), m/s} (the E1.2 definition)."""
+    """{tracklet id: world net speed (first-to-last displacement / time), m/s} (the parked definition)."""
     t = np.asarray(stamps_ns, dtype=np.int64)
     frames = defaultdict(dict)
     for b in gt_boxes:

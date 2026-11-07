@@ -1,4 +1,4 @@
-"""Phase 2 parameter contract: one YAML, strict keys."""
+"""Parameter contract: one YAML, strict keys."""
 import pytest
 
 from processor import config
@@ -46,7 +46,7 @@ def test_missing_file_and_block(tmp_path):
         config.load_params(f)
 
 
-# ---------------------------------------------------------------- Phase 3 keys
+# ---------------------------------------------------------------- tracking keys
 
 def test_tracking_defaults_are_the_approved_ones():
     p = config.load_params(TRACKER_CONFIG)
@@ -66,8 +66,8 @@ def test_tracking_key_types_name_the_key(key, bad):
 
 def test_overrides_parse_and_check():
     p = config.load_params(TRACKER_CONFIG)
-    q = config.apply_overrides(p, ["ego_compensation=false", "association=greedy", "gate_m=2.5"])
-    assert q.ego_compensation is False and q.association == "greedy" and q.gate_m == 2.5
+    q = config.apply_overrides(p, ["ego_compensation=false", "moving_sigma=1.5", "gate_m=2.5"])
+    assert q.ego_compensation is False and q.moving_sigma == 1.5 and q.gate_m == 2.5
     assert p.ego_compensation is True  # the original is untouched
     for bad, name in (["nope=1"], "nope"), (["association=nearest"], "association"), (["gate_m"], "key=value"):
         with pytest.raises(config.ConfigError, match=name):

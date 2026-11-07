@@ -1,10 +1,10 @@
-"""Multi-object tracker (docs/spec.md steps 8-11): constant-velocity Kalman filter per track, gated
-Hungarian (or greedy) association, confirm/delete lifecycle and motion state. ROS-free.
+"""Multi-object tracker: constant-velocity Kalman filter per track, gated
+Hungarian association, confirm/delete lifecycle and motion state. ROS-free.
 
 Both runners call the same Tracker.step() with the same world-frame detections, so live and offline give
-the same tracks for the same processed frames (E3.4).
+the same tracks for the same processed frames (the live track parity check).
 
-Time and gaps (phase-3 FEATURE_SPEC D4):
+Time and gaps:
 - Delta t comes from the dataset stamps, never from wall time.
 - A forward gap of k missing frames counts as k misses for every track before the frame is processed;
   a forward gap never resets anything.
@@ -12,7 +12,7 @@ Time and gaps (phase-3 FEATURE_SPEC D4):
 - A backward stamp is the dataset loop: the caller increments its pass and calls reset() first; step()
   refuses a backward stamp so a missed reset can't go unnoticed.
 
-Motion state (phase-3 FEATURE_SPEC D10): a confirmed track is "moving" only if it is confidently faster than
+Motion state (the confident rule): a confirmed track is "moving" only if it is confidently faster than
 moving_speed: speed - moving_sigma * sigma_speed > moving_speed, where sigma_speed is the filter's velocity
 standard deviation along the direction of travel. Young or drifting tracks have a large sigma and stay static.
 
@@ -128,15 +128,6 @@ class Tracker:
         meas = np.array([(d.x, d.y) for d in dets])
         dist = np.hypot(pred[:, None, 0] - meas[None, :, 0], pred[:, None, 1] - meas[None, :, 1])
         gate = self.p.gate_m
-        if self.p.association == "greedy":
-            pairs, used_t, used_d = [], set(), set()
-            ti, di = np.nonzero(dist <= gate)
-            for c, i, j in sorted(zip(dist[ti, di].tolist(), ti.tolist(), di.tolist())):
-                if i not in used_t and j not in used_d:
-                    pairs.append((i, j))
-                    used_t.add(i)
-                    used_d.add(j)
-            return sorted(pairs)
         rows, cols = linear_sum_assignment(np.where(dist <= gate, dist, _BIG))
         return [(int(r), int(c)) for r, c in zip(rows, cols) if dist[r, c] <= gate]
 

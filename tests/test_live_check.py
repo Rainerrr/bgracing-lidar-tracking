@@ -1,7 +1,7 @@
-"""scripts/live_check.py compare (markers, E2.6) and files (E3.6) on fabricated live runs (no ROS, no data).
+"""scripts/live_check.py compare (markers, detection parity) and files (output files) on fabricated live runs (no ROS, no data).
 
-From Phase 3, /perception/bounding_boxes carries one box per confirmed track (docs/spec.md), so the marker check
-compares the three track topics with the live tracks.csv; the Phase 2 properties (DELETEALL first, counts equal
+/perception/bounding_boxes carries one box per confirmed track (README, Architecture), so the marker check
+compares the three track topics with the live tracks.csv; the detection-marker properties (DELETEALL first, counts equal
 to the live rows of that stamp) are the same."""
 import json
 import subprocess
@@ -75,7 +75,7 @@ def test_good_run_passes_when_enough_distinct_frames(tmp_path):
 
 def test_too_few_distinct_frames_fails_the_real_gate(tmp_path):
     r = compare(build(tmp_path, GOOD_LIVE, GOOD_ARRAYS))
-    assert r.returncode == 1 and "need >= 140" in r.stdout and "E2.6 parity" in r.stdout and "FAIL" in r.stdout
+    assert r.returncode == 1 and "need >= 140" in r.stdout and "detection parity" in r.stdout and "FAIL" in r.stdout
 
 
 def test_a_marker_array_without_deleteall_fails(tmp_path):
@@ -108,7 +108,7 @@ def test_missing_input_files_exit_1_with_a_hint(tmp_path):
     assert r.returncode == 1 and "not found" in r.stderr
 
 
-# ---------------------------------------------------------------- files (E3.6)
+# ---------------------------------------------------------------- files
 
 def files(live):
     return subprocess.run([sys.executable, str(SCRIPT), "files", "--live-dir", str(live)], capture_output=True, text=True)

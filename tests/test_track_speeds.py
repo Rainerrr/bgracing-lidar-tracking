@@ -1,5 +1,5 @@
-"""E3.2 parked speeds and E3.3 moving speeds on the real drive (offline, 154 frames), with their negative
-controls and determinism. Bars from phase-3 FEATURE_SPEC D1/D2, defined in processor.track_scoring.
+"""Parked speeds and moving-object speed errors on the real drive (offline, 154 frames), with their negative
+controls and determinism. Bars fixed before any tracking result, defined in processor.track_scoring.
 Fails, never skips, without ./data."""
 import hashlib
 
@@ -15,12 +15,12 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_the_parked_and_moving_sets_are_the_e1_2_fixture():
+def test_the_parked_and_moving_sets_are_the_pose_check_fixture():
     from test_pose_check import MOVING, PARKED
     assert track_scoring.PARKED == PARKED and track_scoring.MOVING == tuple(sorted(MOVING))
 
 
-# ---------------------------------------------------------------- E3.2
+# ---------------------------------------------------------------- parked speeds
 
 def test_parked_tracklets_read_near_zero(runs):
     pk = runs["on"]["speeds"]["parked"]
@@ -39,7 +39,7 @@ def test_control_without_ego_compensation_parked_tracklets_read_the_ego_speed(ru
     assert not sp["parked"]["pass"]
 
 
-# ---------------------------------------------------------------- E3.3
+# ---------------------------------------------------------------- moving speeds
 
 def test_moving_objects_read_their_speed(runs):
     mv = runs["on"]["speeds"]["moving"]["objects"]
@@ -50,16 +50,16 @@ def test_moving_objects_read_their_speed(runs):
 
 
 def test_control_without_ego_compensation_moving_objects_fail_the_bar(runs):
-    """Amended during the build (Nov 6): the spec's control, a 2-frame pose shift, does not fail (a constant pose
-    lag at near-constant ego velocity offsets positions, not velocities: van error 0.215 m/s,
-    EVIDENCE/e3.2-e3.3-speeds.txt). Without ego compensation both objects read their speed relative to the ego."""
+    """A 2-frame pose shift is not a usable control: it does not fail (a constant pose
+    lag at near-constant ego velocity offsets positions, not velocities: van error 0.215 m/s).
+    Without ego compensation both objects read their speed relative to the ego."""
     mv = runs["no_ego"]["speeds"]["moving"]
     errors = {tid: o["median_abs_error"] for tid, o in mv["objects"].items()}
     assert all(e is not None and e > 0.5 for e in errors.values()), errors
     assert not mv["pass"]
 
 
-# ---------------------------------------------------------------- determinism and Phase 2 unchanged
+# ---------------------------------------------------------------- determinism, detections unchanged
 
 def test_two_runs_are_byte_identical(runs):
     for f in HASHED:
@@ -80,10 +80,10 @@ def test_tracks_csv_follows_the_contract(runs):
 
 
 
-# ---------------------------------------------------------------- E3.4 replay on real data
+# ---------------------------------------------------------------- track replay on real data
 
 def test_replay_equals_the_offline_run_and_control_a_removed_frame_differs(runs, params):
-    """The replay E3.4 uses reproduces the full offline run, and is sensitive to one missing frame."""
+    """The replay the live track parity check uses reproduces the full offline run, and is sensitive to one missing frame."""
     rows = runs["on"]["track_rows"]
     assert run_offline.replay(params, {0: list(range(154))}, DATA_DIR)[0] == rows
     without_60 = [f for f in range(154) if f != 60]

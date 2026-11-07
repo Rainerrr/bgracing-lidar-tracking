@@ -1,7 +1,7 @@
-"""E1.2 pose check: parked ground truth stays still in the world frame, and the check can fail.
+"""Pose check: parked ground truth stays still in the world frame, and the check can fail.
 
 All distances are 2D (x, y) box centers, matching the 2D tracker. The bar (1.2 m)
-was set in the Phase 1 spec before this code existed, from the measured worst
+was set before this code existed, from the measured worst
 case of 1.088 m. Never raise it to make this pass.
 """
 from collections import defaultdict
@@ -11,7 +11,7 @@ import pytest
 
 from core import kitti, poses
 
-PARKED = (3, 5, 6, 7, 8, 9, 10, 11, 13, 14)  # world net speed < 0.5 m/s (spec's static definition)
+PARKED = (3, 5, 6, 7, 8, 9, 10, 11, 13, 14)  # world net speed < 0.5 m/s (the static definition used everywhere)
 BAR_M = 1.2
 NEGATIVE_MIN_M = 3 * BAR_M
 MOVING = {0: 5.74, 1: 4.38}  # lead van, cyclist: world net speed (m/s)
@@ -45,7 +45,7 @@ def net_speed(xy, frames, stamps_ns):
 
 
 def test_parked_tracklets_stay_still_in_world(tracks):
-    """E1.2a: each parked tracklet stays within 1.2 m of its own mean position."""
+    """Each parked tracklet stays within 1.2 m of its own mean position."""
     rows = [(tid, tracks[tid]["cls"], len(tracks[tid]["frames"]), max_deviation(tracks[tid]["world"]),
              max_deviation(tracks[tid]["velo"])) for tid in PARKED]
     table = "\n".join(["tracklet  class  frames  world_max_dev_m  velodyne_max_dev_m"] +
@@ -58,7 +58,7 @@ def test_parked_tracklets_stay_still_in_world(tracks):
 
 
 def test_negative_control_parked_tracklets_move_in_velodyne_frame(tracks):
-    """E1.2b: without the ego pose the same objects sweep past at ego speed, so the check can fail."""
+    """Without the ego pose the same objects sweep past at ego speed, so the check can fail."""
     too_still = [(t, round(max_deviation(tracks[t]["velo"]), 3)) for t in PARKED
                  if max_deviation(tracks[t]["velo"]) < NEGATIVE_MIN_M]
     assert not too_still, f"velodyne-frame deviation below {NEGATIVE_MIN_M} m: {too_still}"
@@ -66,7 +66,7 @@ def test_negative_control_parked_tracklets_move_in_velodyne_frame(tracks):
 
 @pytest.mark.parametrize("tid, expected", sorted(MOVING.items()))
 def test_moving_control_keeps_real_motion(tracks, drive, tid, expected):
-    """E1.2c: a transform that froze everything would also freeze the lead van and the cyclist."""
+    """A transform that froze everything would also freeze the lead van and the cyclist."""
     t = tracks[tid]
     assert net_speed(t["world"], t["frames"], drive.stamps_ns) == pytest.approx(expected, abs=MOVING_TOL)
 

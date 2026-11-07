@@ -1,10 +1,10 @@
-"""Phase 4 evaluation metrics of one offline run against the KITTI tracklets. ROS-free (numpy, scipy via matching).
+"""Evaluation metrics of one offline run against the KITTI tracklets. ROS-free (numpy, scipy via matching).
 
-Definitions are fixed in docs/spec.md (Evaluation, Metrics) and the phase-4 FEATURE_SPEC (D4-D16):
+Definitions (fixed before the first evaluation run):
 - The unit is the GT box-frame. Matching is track_scoring._matches, unchanged: per frame, one-to-one Hungarian on
   2D centers, gate 2.0 m, ground truth of every class in the evaluation region against all confirmed tracks.
-  That keeps every number that overlaps Phase 3 (tracking_speeds.json) identical.
-- A GT object is static if its tracklet's world net speed is < 0.5 m/s (the E1.2 / PARKED definition).
+  That keeps every number that overlaps the tracking speed scores (tracking_speeds.json) identical.
+- A GT object is static if its tracklet's world net speed is < 0.5 m/s (the PARKED definition of track_scoring).
 - The first warmup_frames frames after a track's confirmation are excluded from velocity RMSE, static accuracy,
   moving-label recall, the false-moving rate and world stillness. They are not excluded from recall, label
   coverage, center error, ID switches or lifetimes.
@@ -19,9 +19,9 @@ import numpy as np
 from core import poses
 from processor import matching, track_scoring
 
-STATIC_NET_SPEED = 0.5  # m/s, world net speed of a tracklet below which it is static (D7)
-ABLATION_RATIO_BAR = 3.0  # D1: no-ego static-object velocity RMSE must be at least this multiple of the compensated one
-MIN_STILLNESS_FRAMES = 10  # D15: post-warm-up frames a track needs to be scored for world stillness (1 s)
+STATIC_NET_SPEED = 0.5  # m/s, world net speed of a tracklet below which it is static
+ABLATION_RATIO_BAR = 3.0  # the one pass/fail bar, fixed before the first run: no-ego static-object velocity RMSE must be at least this multiple of the compensated one
+MIN_STILLNESS_FRAMES = 10  # post-warm-up frames a track needs to be scored for world stillness (1 s)
 
 
 def _rate(num, den, den_name):
@@ -45,7 +45,7 @@ def _rmse(sum_sq, n, den_name):
 
 
 def static_tracklets(gt_boxes, T_wv, stamps_ns):
-    """Ids of the static GT tracklets (D7): world net speed < 0.5 m/s."""
+    """Ids of the static GT tracklets: world net speed < 0.5 m/s."""
     return {i for i, v in track_scoring.gt_net_speed(gt_boxes, T_wv, stamps_ns).items() if v < STATIC_NET_SPEED}
 
 
@@ -83,13 +83,13 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
     gt_region = [b for b in gt_boxes if bool(matching.in_eval_region(b.x, b.y, b.z, p))]
     gt_keys = {(b.frame, b.id) for b in gt_region}
 
-    matches = list(track_scoring._matches(rows, gt_boxes, T_wv, p))  # private on purpose: unchanged Phase 3 matching
+    matches = list(track_scoring._matches(rows, gt_boxes, T_wv, p))  # private on purpose: the same matching as the speed scores
     matched_gt = {(f, g.id) for f, _, g in matches}
     matched_rows = {(f, r["track_id"]) for f, r, _ in matches}
     matched_track_ids = {r["track_id"] for _, r, _ in matches}
     assert matched_gt <= gt_keys
 
-    # ------------------------------------------------------------ recall (D5)
+    # ------------------------------------------------------------ recall
     per_class, per_tracklet = {}, {}
     for b in gt_region:
         c = per_class.setdefault(b.cls, {"total": 0, "matched": 0, "ids": set()})
@@ -111,7 +111,7 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
               "missed": len(gt_keys - matched_gt),
               "car_van": _rate(cv_m, cv_t, "Car+Van GT box-frames"), "per_class": recall_by_class}
 
-    # ------------------------------------------------------------ label coverage (D14), unlabelled tracks
+    # ------------------------------------------------------------ label coverage, unlabelled tracks
     region_rows = [r for r in rows if r["in_region"]]
     matched_region_rows = [r for r in region_rows if (r["frame"], r["track_id"]) in matched_rows]
     coverage = _rate(len(matched_region_rows), len(region_rows), "confirmed track-frames in the region")
@@ -138,7 +138,7 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
         ids = [tid for _, tid in sorted(items)]
         id_sw[gid] = sum(a != b for a, b in zip(ids, ids[1:]))
 
-    # ------------------------------------------------------------ velocity, labels (warm-up scope, D8)
+    # ------------------------------------------------------------ velocity, labels (warm-up scope)
     gt_vel = track_scoring.gt_world_velocity(gt_boxes, T_wv, stamps_ns)
     ss = {"static": 0.0, "moving": 0.0}
     nn = {"static": 0, "moving": 0}
@@ -157,7 +157,7 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
             continue
         gv = np.array([v[0], v[1], 0.0])
         if not ego:
-            gv = T_wv[f][:3, :3].T @ gv  # D10: world GT velocity in velodyne axes, no ego subtraction
+            gv = T_wv[f][:3, :3].T @ gv  # world GT velocity in velodyne axes, no ego subtraction
         d2 = float((r["vx"] - gv[0]) ** 2 + (r["vy"] - gv[1]) ** 2)
         ss[kind] += d2
         nn[kind] += 1
@@ -187,7 +187,7 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
                           "share_moving": _rate(sum(x[2] == "moving" for x in s), len(s), "scored frames"),
                           "id_switches": id_sw.get(tid, 0)}
 
-    # ------------------------------------------------------------ world stillness (D15), lifetimes (part 1)
+    # ------------------------------------------------------------ world stillness, lifetimes (part 1)
     best = {}  # track id -> the tracklet it matches most often (ties: lower id), as track_scoring.gt_tags
     counts = defaultdict(lambda: defaultdict(int))
     for _, r, g in matches:
@@ -242,14 +242,14 @@ def evaluate(track_rows, dets_by_frame, gt_boxes, T_wv, stamps_ns, params, n_fra
 
 
 def ablation(on, off):
-    """D1: the no-ego static-object velocity RMSE must be >= ABLATION_RATIO_BAR times the compensated one."""
+    """The gate: the no-ego static-object velocity RMSE must be >= ABLATION_RATIO_BAR times the compensated one."""
     a, b = on["velocity"]["rmse_static"]["value"], off["velocity"]["rmse_static"]["value"]
     ratio = (b / a) if (a and b is not None) else None
     return {"rmse_on": a, "rmse_off": b, "ratio": ratio, "bar": ABLATION_RATIO_BAR,
             "pass": bool(ratio is not None and ratio >= ABLATION_RATIO_BAR)}
 
 
-# ---------------------------------------------------------------- rendering (E4.1, E4.2b)
+# ---------------------------------------------------------------- rendering (deterministic, six parts)
 # Fixed formats (:.3f, integers), sorted classes and tracklets, no timestamp, timing, host or platform text:
 # the same inputs always render the same bytes.
 
@@ -313,7 +313,7 @@ def _table(header, rows):
 
 
 def _speed_summary(on):
-    """The Phase 3 bars quoted from the compensated run: median of the parked medians, and the van and cyclist errors."""
+    """The tracking speed bars quoted from the compensated run: median of the parked medians, and the van and cyclist errors."""
     parked = [on["tracklets"].get(i, {}).get("median_speed") for i in track_scoring.PARKED]
     if any(m is None for m in parked):  # as track_scoring.score: no summary unless all ten tracklets were scored
         parked = []
@@ -339,15 +339,15 @@ def render(on, off, abl, meta):
 
     # ---- 0
     head(0)
-    L += [f"**Gate (D1): {'PASS' if abl['pass'] else 'FAIL'}.** Static-object velocity RMSE is {_x(abl['rmse_on'], 'compensated RMSE')} m/s "
+    L += [f"**Gate: {'PASS' if abl['pass'] else 'FAIL'}.** Static-object velocity RMSE is {_x(abl['rmse_on'], 'compensated RMSE')} m/s "
           f"with ego compensation and {_x(abl['rmse_off'], 'uncompensated RMSE')} m/s without: "
           f"a ratio of {_x(abl['ratio'], 'ratio', 2)}, against a bar of at least {abl['bar']:.1f} (part 4).", ""]
     L += _table(["Result", "Value", "Judged by", "Part"], [
         ["Static-object velocity RMSE, ego compensation off vs on", f"{_x(abl['ratio'], 'ratio', 2)}x", f"gated, bar {abl['bar']:.1f}x", 4],
         ["Parked tracklets: median of per-tracklet median speed (m/s)", _x(mom, "parked tracklets"),
-         f"gated in Phase 3 (E3.2), bar {track_scoring.PARKED_BAR_MEDIAN}; worst tracklet {_x(worst, 'parked tracklets')}, bar {track_scoring.PARKED_BAR_EACH}", 2],
+         f"gated by the parked-speed test, bar {track_scoring.PARKED_BAR_MEDIAN}; worst tracklet {_x(worst, 'parked tracklets')}, bar {track_scoring.PARKED_BAR_EACH}", 2],
         ["Lead van and cyclist: median speed error (m/s)", " / ".join(_x(merr[i], "scored frames") for i in track_scoring.MOVING),
-         f"gated in Phase 3 (E3.3), bar {track_scoring.MOVING_BAR}", 2],
+         f"gated by the moving-speed test, bar {track_scoring.MOVING_BAR}", 2],
         ["Car+Van recall (box-frames)", _rate_s(rec["car_van"]), NO_BAR, 2],
         ["Label coverage: share of in-region track-frames explained by a label", _rate_s(on["coverage"]), f"{NO_BAR}; a lower bound", 2],
         ["Static accuracy / parked flicker", f"{_v(lab['static_accuracy'])} / {_v(lab['flicker'])}", NO_BAR, 2],
@@ -392,7 +392,7 @@ def render(on, off, abl, meta):
     L += ["**By class** (GT box-frames in the evaluation region; recall, center error and velocity RMSE: no bar by design)", ""]
     L += _table(["Class", "Tracklets", "GT box-frames", "Matched", "Missed", "Recall", "Center error (m)", "Velocity RMSE (m/s)", "Note"], rows)
     cv = rec["car_van"]
-    L += ["", f"Car+Van recall: {_rate_s(cv)} (the Phase 2 detection recall used the same 520 box-frames).", ""]
+    L += ["", f"Car+Van recall: {_rate_s(cv)} (the detection-only recall in detection_recall.json uses the same 520 box-frames).", ""]
     L += _table(["Metric", "Value", "Judged by"], [
         ["Label coverage (precision against labels): matched / in-region track-frames", _rate_s(on["coverage"]),
          f"{NO_BAR}; a lower bound, {on['unlabelled_track_frames']} track-frames have no label"],
@@ -401,7 +401,7 @@ def render(on, off, abl, meta):
         ["Static accuracy: static GT frames labelled `static`", _rate_s(lab["static_accuracy"]), NO_BAR],
         ["Parked flicker: static GT frames labelled `moving` (= 1 - static accuracy)", _rate_s(lab["flicker"]), NO_BAR],
         ["Moving-label recall: moving GT frames labelled `moving`", _rate_s(lab["moving_label_recall"]),
-         f"{NO_BAR}; walkers read `static` by design (D10)"],
+         f"{NO_BAR}; walkers read `static` by design (confident motion rule)"],
         ["ID switches, all tracklets", on["id_switches"]["total"], NO_BAR],
     ])
     trs = []
@@ -427,7 +427,7 @@ def render(on, off, abl, meta):
           f"The box center of a large object drifts more than that of a small one, so the two rows are not directly comparable. No bar by design.", ""]
     L += _table(["Metric", "Value", "Judged by"], [
         ["False-moving rate: unmatched in-region track-frames after the warm-up labelled `moving`", _rate_s(lab["false_moving"]),
-         f"{NO_BAR}; the baseline for the Phase 6 fixes"]])
+         f"{NO_BAR}; the baseline for future fixes"]])
     L += ["", "This counts every in-region track-frame that matches no tracklet, including the unmatched frames of tracks that do match "
           "a tracklet in other frames (for example when a moving vehicle is briefly missed). It does not assume that unmatched objects are fixed.", ""]
 
@@ -454,7 +454,7 @@ def render(on, off, abl, meta):
     # ---- 5
     head(5)
     L += [
-        f"- **Matching:** per frame, one-to-one Hungarian assignment on 2D center distance, gate {matching.EVAL_GATE_M} m; ground truth of every class in the evaluation region against all confirmed tracks (the Phase 3 matching, unchanged).",
+        f"- **Matching:** per frame, one-to-one Hungarian assignment on 2D center distance, gate {matching.EVAL_GATE_M} m; ground truth of every class in the evaluation region against all confirmed tracks (the same matching as the tracking speed scores).",
         "- **Evaluation region:** the processing ROI minus the ego box, front half only (x >= 0 in the velodyne frame). Ground truth is tested on its velodyne center; a track is mapped back to velodyne and tested on x and y (tracks.csv has no z).",
         "- **Unit:** one ground-truth box-frame. Recall is matched / GT box-frames in the region; matched + missed equals that count.",
         f"- **Static:** a tracklet whose world net speed is below {STATIC_NET_SPEED} m/s (the 10 parked tracklets); every other tracklet is moving.",
@@ -463,7 +463,7 @@ def render(on, off, abl, meta):
         "- **ID switch:** per tracklet, a matched frame whose track ID differs from the previous matched track ID; frames without a match do not reset it.",
         f"- **Unlabelled track:** a track with at least one frame in the region that is never matched to a tracklet. World stillness scores tracks with at least {MIN_STILLNESS_FRAMES} post-warm-up frames.",
         "- **Zero denominators** print `n/a` with the name of the empty denominator, never 0.",
-        f"- **Gate:** only the ablation ratio (at least {ABLATION_RATIO_BAR:.1f}) is a pass/fail bar, fixed before the first Phase 4 run.",
+        f"- **Gate:** only the ablation ratio (at least {ABLATION_RATIO_BAR:.1f}) is a pass/fail bar, fixed before the first evaluation run.",
         f"- **Reproduce:** `{meta['command']}`. Two runs give byte-identical files on the same CPU architecture (verified on arm64 and on x86_64, the latter on a GitHub Actions runner).",
     ]
     return "\n".join(L) + "\n"

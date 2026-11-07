@@ -35,7 +35,7 @@ class Params:
     max_width: float
     min_height: float
     max_height: float
-    # Phase 3: tracking (docs/spec.md steps 8-11; defaults fixed before code, FEATURE_SPEC D8)
+    # tracking (filter and lifecycle defaults fixed before any tracking code ran; moving_sigma added during the build)
     gate_m: float
     confirm_hits: int
     max_misses: int
@@ -50,7 +50,7 @@ class Params:
 
 
 _TYPES = {f.name: f.type for f in fields(Params)}
-CHOICES = {"association": ("hungarian", "greedy")}
+CHOICES = {"association": ("hungarian",)}  # the only method; kept as a key so outputs record it
 
 
 def _coerce(key, value):
