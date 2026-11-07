@@ -30,7 +30,7 @@ _INTERNAL = [
     "docs/" + r"spec\.md",
 ]
 INTERNAL = re.compile("|".join(f"(?:{p})" for p in _INTERNAL))
-BINARY = (".png",)
+BINARY = (".png", ".gif")
 
 
 @pytest.fixture(scope="module")
