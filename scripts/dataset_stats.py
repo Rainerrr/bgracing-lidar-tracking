@@ -7,7 +7,8 @@ Runs without ROS and without the publisher:
 
 The JSON is the checked artifact: sorted keys, fixed histogram edges and rounded
 floats, so two runs give byte-identical files. If tracklet_labels.xml is missing,
-the stats still run and say "ground_truth": "missing".
+the stats still run and say "ground_truth": "missing". The drive defaults to the config file's; another drive
+(--drive ...) writes to /output/<drive>/ by default, so the first drive's files are kept.
 
 It also reports the per-stage point counts, computed by the same perception core the live node uses.
 """
@@ -26,7 +27,6 @@ import numpy as np  # noqa: E402
 from core import kitti, poses  # noqa: E402
 from processor import config, perception  # noqa: E402
 
-DEFAULT_DRIVE = "2011_09_26_drive_0005"
 DEFAULT_CONFIG = "/config/tracker.yaml"
 STAGE_LABELS = {"raw": "raw", "roi": "after ROI", "voxel": "after voxel", "non_ground": "after ground removal",
                 "clustered": "in kept clusters"}
@@ -211,16 +211,19 @@ def write_outputs(stats, out_dir):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--data-dir", default="/data")
-    ap.add_argument("--drive", default=DEFAULT_DRIVE)
-    ap.add_argument("--out-dir", default="/output")
-    ap.add_argument("--config", default=DEFAULT_CONFIG, help="perception parameters (per-stage counts)")
+    ap.add_argument("--drive", default=None, help="default: the drive of the config file")
+    ap.add_argument("--out-dir", default=None, help="default /output, or /output/<drive> for a drive other than the config file's")
+    ap.add_argument("--config", default=DEFAULT_CONFIG, help="perception parameters (per-stage counts) and the default drive")
     args = ap.parse_args(argv)
     try:
-        stats = compute_stats(args.data_dir, args.drive, config.load_params(args.config))
+        params = config.load_params(args.config)
+        drive = args.drive or params.drive
+        out_dir = args.out_dir or config.output_root(drive, params.drive)
+        stats = compute_stats(args.data_dir, drive, params)
     except (kitti.DataError, config.ConfigError) as exc:
         print(f"dataset_stats: {exc}", file=sys.stderr)
         return 1
-    for path in write_outputs(stats, args.out_dir):
+    for path in write_outputs(stats, out_dir):
         print(f"wrote {path}")
     return 0
 

@@ -1,6 +1,7 @@
 """The README keeps its outline, its links and images resolve, its commands are the real ones, and its
 headline numbers are the ones in the committed samples. Needs the repo mounted read-only at REPO_DIR (verify.sh
 does this); without it the tests fail, they never skip."""
+import dataclasses
 import json
 import os
 import re
@@ -9,7 +10,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(os.environ.get("REPO_DIR", "/repo"))
-OUTLINE = ["Architecture", "Dataset", "Pipeline", "Results", "How to run", "Limitations and next steps", "Credits"]
+OUTLINE = ["Architecture", "Dataset", "Pipeline", "Results", "How to run", "Known gaps", "Credits"]
 
 
 @pytest.fixture(scope="module")
@@ -135,3 +136,84 @@ def test_layout_parses_and_anchors_resolve(readme):
     slugs = {re.sub(r"[^a-z0-9 -]", "", h.lower()).strip().replace(" ", "-") for h in re.findall(r"^#{1,6} (.+)$", text, flags=re.M)}
     for anchor in re.findall(r"\]\(#([^)\s]+)\)", text):
         assert anchor in slugs, f"README anchor #{anchor} has no heading"
+
+
+# ---------------------------------------------------------------- the second drive section
+
+SECOND_DRIVE = "2011_09_26_drive_0011"
+
+
+def _d11():
+    d = REPO / "docs" / "samples" / SECOND_DRIVE
+    return {n: json.loads((d / n).read_text()) for n in
+            ("tracking_speeds.json", "tracking_speeds_no_ego.json", "dataset_stats.json", "detection_recall.json")}, \
+        (d / "evaluation.md").read_text(encoding="utf-8")
+
+
+def _drive_section(readme):
+    return readme.split("### Second drive (KITTI drive 0011)", 1)[1].split("\n## ", 1)[0]
+
+
+def test_second_drive_statistics_match_its_dataset_stats(readme):
+    d = _d11()[0]["dataset_stats.json"]
+    pts, speed, period, by = d["points_per_frame"], d["ego_speed_mps"], d["sensor_period_s"], d["gt_tracklets_by_class"]
+    assert f"| Sweeps | {d['frames']} over {d['duration_s']:.2f} s |" in readme
+    assert f"{d['mean_rate_hz']:.2f} Hz mean (period {period['min'] * 1000:.1f}–{period['max'] * 1000:.1f} ms)" in readme
+    assert f"mean {pts['mean']:,.0f}; min {pts['min']:,}; max {pts['max']:,}" in readme
+    assert f"{speed['min']:.1f}–{speed['max']:.1f} m/s, mean {speed['mean']:.1f} m/s" in readme
+    assert f"{sum(by.values())} tracklets" in readme and f"{d['gt_poses_total']:,} boxes" in readme
+    still = sum(v < 0.1 for v in speed["series"])
+    assert f"below 0.1 m/s in the last {still} sweeps" in readme
+    assert all(v < 0.1 for v in speed["series"][-still:])  # the stop is one stretch at the end
+
+
+def test_second_drive_paragraph_quotes_the_samples_and_matches_their_verdicts(readme):
+    s, ev = _d11()
+    section = _drive_section(readme)
+    cv = s["detection_recall.json"]["car_van"]
+    assert f"{cv['matched'] / cv['total']:.3f} ({cv['matched']} / {cv['total']} box-frames)" in section
+    ratio = re.search(r"a ratio of ([\d.]+), against a bar", ev).group(1)
+    assert f"{ratio} times larger" in section
+    assert "| " not in section  # a paragraph, not a table
+    # the text says the two speed tests missed their bars: it must stay true of the committed sample
+    assert s["tracking_speeds.json"]["parked"]["pass"] is False and s["tracking_speeds.json"]["moving"]["pass"] is False
+    assert "did not meet their bars" in section and "further tuning" in section
+
+
+def test_second_drive_samples_use_the_first_drives_parameters():
+    from processor import config
+    base = config.load_params(os.environ.get("TRACKER_CONFIG", "/config/tracker.yaml"))
+    for name in ("tracking_speeds.json", "tracking_speeds_no_ego.json"):
+        got = _d11()[0][name]["params"]
+        want = dataclasses.asdict(base)
+        want["drive"] = SECOND_DRIVE
+        if name.endswith("no_ego.json"):
+            want["ego_compensation"] = False
+        assert got == json.loads(json.dumps(want)), f"{name}: parameters differ from config/tracker.yaml"
+
+
+def test_the_parameter_check_catches_a_changed_value():
+    from processor import config
+    base = config.load_params(os.environ.get("TRACKER_CONFIG", "/config/tracker.yaml"))
+    got = _d11()[0]["tracking_speeds.json"]["params"]
+    changed = json.loads(json.dumps(dataclasses.asdict(dataclasses.replace(base, dbscan_eps=base.dbscan_eps + 0.1))))
+    changed["drive"] = SECOND_DRIVE
+    assert got != changed
+
+
+def test_second_drive_says_it_is_not_an_untouched_test_set(readme):
+    flat = " ".join(_drive_section(readme).split())
+    assert "no further tuning" in flat and "not an untouched test set" in flat
+    for word in ("held-out", "held out", "dev drive", "phase"):
+        assert word not in readme.lower(), word
+
+
+def test_the_readme_names_its_author_at_the_top(readme):
+    assert readme.split("\n", 4)[2] == "By Rene Bitton"
+
+
+def test_known_gaps_lists_five_numbered_items_at_the_bottom(readme):
+    gaps = readme.split("## Known gaps", 1)[1].split("\n## ", 1)[0]
+    assert re.findall(r"^(\d)\. \*\*", gaps, flags=re.M) == ["1", "2", "3", "4", "5"]
+    for topic in ("`moving`", "Buses and long trucks", "second drive", "classes", "Thin evidence"):
+        assert topic in gaps

@@ -12,7 +12,7 @@ Offline run over all 154 frames, once with ego compensation and once without, sc
 |---|---|---|---|
 | Static-object velocity RMSE, ego compensation off vs on | 8.19x | gated, bar 3.0x | 4 |
 | Parked tracklets: median of per-tracklet median speed (m/s) | 0.379 | gated by the parked-speed test, bar 0.5; worst tracklet 0.660, bar 0.7 | 2 |
-| Lead van and cyclist: median speed error (m/s) | 0.217 / 0.236 | gated by the moving-speed test, bar 0.5 | 2 |
+| Moving tracklets #0 Van, #1 Cyclist: median speed error (m/s) | 0.217 / 0.236 | gated by the moving-speed test, bar 0.5 | 2 |
 | Car+Van recall (box-frames) | 0.910 (473 / 520) | no bar by design | 2 |
 | Label coverage: share of in-region track-frames explained by a label | 0.112 (629 / 5624) | no bar by design; a lower bound | 2 |
 | Static accuracy / parked flicker | 0.984 / 0.016 | no bar by design | 2 |

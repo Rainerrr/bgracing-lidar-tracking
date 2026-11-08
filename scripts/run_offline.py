@@ -4,7 +4,8 @@
     docker compose run --rm --no-deps processor python3 /app/scripts/run_offline.py
     docker compose run --rm --no-deps processor python3 /app/scripts/run_offline.py --set ego_compensation=false
 
-Writes to /output/offline (/output/offline/no_ego with ego compensation off; never the live output folder):
+Writes to /output/offline (/output/offline/no_ego with ego compensation off; never the live output folder). For a
+drive other than the config file's (--set drive=...), the default is /output/<drive>/offline instead:
   detections.csv, frames.csv       deterministic per-frame rows (what the live node also writes)
   detection_recall.json            deterministic recall summary against the tracklets
   tracks.csv                       confirmed tracks per frame (columns as in the README; pass is 0 offline)
@@ -31,6 +32,12 @@ DEFAULT_OUT = "/output/offline"
 DEFAULT_OUT_NO_EGO = "/output/offline/no_ego"
 TIME_SCOPE = "detect() = pipeline steps 2-7 (ROI to detections); .bin reads and file writes excluded"
 TRACK_SCOPE = "to_world() + Tracker.step() = pipeline steps 7 (world transform) to 11"
+
+
+def default_out_dir(params, config_drive):
+    """/output/offline (or offline/no_ego), under /output/<drive>/ when the drive is not the config file's."""
+    root = config.output_root(params.drive, config_drive)
+    return str(root / "offline" if params.ego_compensation else root / "offline" / "no_ego")
 
 
 def carried_poses(drive):
@@ -139,14 +146,16 @@ def run(params, out_dir, data_dir=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", default=DEFAULT_CONFIG)
-    ap.add_argument("--out-dir", default=None, help=f"default {DEFAULT_OUT} ({DEFAULT_OUT_NO_EGO} with ego compensation off)")
+    ap.add_argument("--out-dir", default=None, help=f"default {DEFAULT_OUT} ({DEFAULT_OUT_NO_EGO} with ego compensation off); "
+                                                   "under /output/<drive>/ for a drive other than the config file's")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="override a config value, e.g. --set ego_compensation=false (repeatable)")
     ap.add_argument("--data-dir", default=None, help="override data_dir from the config (tests)")
     args = ap.parse_args(argv)
     try:
-        params = config.apply_overrides(config.load_params(args.config), args.set)
-        out_dir = args.out_dir or (DEFAULT_OUT if params.ego_compensation else DEFAULT_OUT_NO_EGO)
+        base = config.load_params(args.config)
+        params = config.apply_overrides(base, args.set)
+        out_dir = args.out_dir or default_out_dir(params, base.drive)
         result = run(params, out_dir, args.data_dir)
     except (config.ConfigError, kitti.DataError) as exc:
         print(f"run_offline: {exc}", file=sys.stderr)

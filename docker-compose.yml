@@ -1,13 +1,17 @@
+# KITTI_DRIVE picks the drive for both containers (default 2011_09_26_drive_0005), so they never replay and track
+# different drives: KITTI_DRIVE=2011_09_26_drive_0011 docker compose up --build
 services:
   publisher:
     build: { context: ., dockerfile: publisher/Dockerfile.publisher }
     init: true
-    environment: [ROS_DOMAIN_ID=42]
+    environment: [ROS_DOMAIN_ID=42, "KITTI_DRIVE=${KITTI_DRIVE:-2011_09_26_drive_0005}"]
+    command: ["python3", "/app/publisher/kitti_lidar_publisher.py", "--ros-args", "--params-file", "/config/publisher.yaml",
+              "-p", "drive:=${KITTI_DRIVE:-2011_09_26_drive_0005}"]
     volumes: ["./data:/data:ro", "./config:/config:ro"]
   processor:
     build: { context: ., dockerfile: processor/Dockerfile.processor }
     init: true
-    environment: [ROS_DOMAIN_ID=42]
+    environment: [ROS_DOMAIN_ID=42, "KITTI_DRIVE=${KITTI_DRIVE:-2011_09_26_drive_0005}"]  # read by processor.launch.py
     volumes: ["./data:/data:ro", "./config:/config:ro", "./output:/output"]
     ports: ["127.0.0.1:8765:8765"]  # bridge has no auth: localhost only
     stop_signal: SIGINT  # ros2 launch shuts its nodes down cleanly on SIGINT, not on SIGTERM

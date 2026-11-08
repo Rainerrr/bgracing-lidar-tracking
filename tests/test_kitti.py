@@ -61,6 +61,17 @@ def test_missing_data_folder_names_download_script(tmp_path):
     assert "2011_09_26_drive_0005_sync" in str(exc.value)
 
 
+@pytest.mark.parametrize("name", ["../x", "2011_09_26_drive_0005/../..", "-x", "a b", "2011_09_26_drive_0011\n",
+                                  "2011_09_26", "2011_09_26_drive_05", "", None])
+def test_a_malformed_drive_name_is_refused_before_any_path_is_built(tmp_path, name):
+    with pytest.raises(kitti.DataError, match="YYYY_MM_DD_drive_NNNN"):
+        kitti.load_drive(tmp_path, name)
+
+
+def test_a_well_formed_drive_name_maps_inside_the_data_folder(tmp_path):
+    assert kitti.drive_dir(tmp_path, "2011_09_26_drive_0011") == tmp_path / "2011_09_26" / "2011_09_26_drive_0011_sync"
+
+
 def test_missing_timestamps_names_download_script(make_drive):
     data_dir, drive = make_drive()
     (kitti.drive_dir(data_dir, drive) / "velodyne_points" / "timestamps.txt").unlink()
