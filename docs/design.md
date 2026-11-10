@@ -47,11 +47,11 @@ Why the pipeline is built the way it is, and which alternatives were rejected. T
 
 ## Known risks
 
-The README's Limitations section lists what is not solved:
-- pedestrians are mostly missed;
+The README's Known gaps section lists what is not solved:
 - some clutter tracks are labelled `moving`;
-- boxes are axis-aligned;
-- the live run drops about 2 % of sweeps;
-- byte identity is verified only on the stated architectures, and the apt packages are not pinned.
+- buses and long trucks are dropped by the size filter;
+- speed accuracy did not carry over to the second drive;
+- tracks carry no class, and walking pedestrians read `static`;
+- the evidence is two drives, scored in front of the car only, and the live run drops about 2 % of sweeps.
 
-The next steps are listed there too.
+Axis-aligned boxes, and byte identity verified only on the stated architectures with unpinned apt packages, are listed there as smaller caveats.

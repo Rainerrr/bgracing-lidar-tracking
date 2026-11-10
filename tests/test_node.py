@@ -3,6 +3,9 @@
 The node's callbacks are called directly, so the no-odom, odom-after-cloud, duplicate, unknown-stamp and loop
 paths are exercised deterministically (a live run rarely hits them: no_odom was 0 over 446 frames).
 """
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 import rclpy
@@ -11,7 +14,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
 
 from core import kitti, poses
-from processor.obstacle_tracker_node import ObstacleTrackerNode
+from processor.obstacle_tracker_node import MISMATCH_AFTER, ObstacleTrackerNode
 
 from conftest import DATA_DIR, TRACKER_CONFIG
 
@@ -70,6 +73,43 @@ def test_duplicate_and_unknown_stamps_are_skipped_and_counted(node):
     node.on_cloud(cloud(node, 0))
     node.on_cloud(cloud(node, 1, ns=int(node.drive.stamps_ns[1]) + 1))
     assert node.duplicate_stamps == 1 and node.unknown_stamps == 1 and len(node.log) == 1
+
+
+class Recorder:
+    """Stands in for the node's logger and keeps every message by level."""
+    def __init__(self):
+        self.msgs = {"info": [], "warning": [], "error": []}
+
+    def __getattr__(self, level):
+        return self.msgs[level].append
+
+
+def first_sweeps(node, known_at=None, n=MISMATCH_AFTER):
+    """n clouds whose stamps are not in the drive, except the one at index known_at."""
+    log = Recorder()
+    node.get_logger = lambda: log
+    for i in range(n):
+        node.on_odom(odom(node, i))
+        ns = int(node.drive.stamps_ns[i]) + (0 if i == known_at else 1)
+        node.on_cloud(cloud(node, i, ns=ns))
+    return log
+
+
+def test_ten_first_sweeps_from_another_drive_give_one_named_error(node):
+    log = first_sweeps(node, n=MISMATCH_AFTER + 5)
+    assert len(log.msgs["error"]) == 1, log.msgs["error"]
+    assert "set KITTI_DRIVE for both services" in log.msgs["error"][0] and node.p.drive in log.msgs["error"][0]
+    assert node.drive_mismatch and node.metrics()["drive_mismatch"] is True
+    on_disk = json.loads((Path(node.out) / "metrics.json").read_text())
+    assert on_disk["drive_mismatch"] is True and on_disk["unknown_stamps"] == MISMATCH_AFTER  # written at detection
+    assert node.unknown_stamps == MISMATCH_AFTER + 5 and node.log == []  # still listening, nothing tracked
+
+
+@pytest.mark.parametrize("known_at", [0, MISMATCH_AFTER - 1])
+def test_one_known_stamp_among_the_first_ten_gives_no_mismatch_error(node, known_at):
+    log = first_sweeps(node, known_at=known_at, n=MISMATCH_AFTER + 5)
+    assert log.msgs["error"] == [] and not node.drive_mismatch and node.metrics()["drive_mismatch"] is False
+    assert len(node.log) == 1
 
 
 def test_a_backward_stamp_starts_a_new_pass_and_resets_the_tracker(node):

@@ -14,6 +14,7 @@ from collections import namedtuple
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -21,6 +22,7 @@ import numpy as np
 DOWNLOAD_HINT = "run scripts/download_kitti.sh (see the README)"
 POINT_BYTES = 16  # float32 x, y, z, reflectance
 OXTS_FIELDS = 30
+DRIVE_NAME = re.compile(r"[0-9]{4}_[0-9]{2}_[0-9]{2}_drive_[0-9]{4}")  # e.g. 2011_09_26_drive_0005
 
 
 class DataError(RuntimeError):
@@ -32,7 +34,9 @@ class MissingDataError(DataError, FileNotFoundError):
 
 
 def _missing(path, what):
-    return MissingDataError(f"{what} not found: {path}; {DOWNLOAD_HINT}")
+    m = DRIVE_NAME.search(str(path))  # name the drive, so the hint is the exact command for a second drive too
+    hint = f"run scripts/download_kitti.sh {m.group(0)} (see the README)" if m else DOWNLOAD_HINT
+    return MissingDataError(f"{what} not found: {path}; {hint}")
 
 
 # ---------------------------------------------------------------- timestamps
@@ -123,7 +127,11 @@ def load_calib_imu_to_velo(path):
 # ---------------------------------------------------------------- the drive
 
 def drive_dir(data_dir, drive):
-    """data_dir/<date>/<drive>_sync, e.g. 2011_09_26/2011_09_26_drive_0005_sync."""
+    """data_dir/<date>/<drive>_sync, e.g. 2011_09_26/2011_09_26_drive_0005_sync.
+
+    The name is checked first, so a value from the command line or the environment can never point outside data_dir."""
+    if not isinstance(drive, str) or not DRIVE_NAME.fullmatch(drive):
+        raise DataError(f"drive name {drive!r} is not of the form YYYY_MM_DD_drive_NNNN (e.g. 2011_09_26_drive_0005)")
     return Path(data_dir) / drive[:10] / f"{drive}_sync"
 
 

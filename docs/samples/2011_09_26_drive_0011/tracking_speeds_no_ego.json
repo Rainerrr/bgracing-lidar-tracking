@@ -1,0 +1,196 @@
+{
+ "drive": "2011_09_26_drive_0011",
+ "frames": 233,
+ "ground_truth": "present",
+ "method": {
+  "aggregation": "by tracklet",
+  "gt_velocity": "centered difference of world-frame GT centers over +-5 frames",
+  "matching": "per frame, Hungarian on 2D centers, gate 2.0 m, evaluation region",
+  "warmup_frames": 5
+ },
+ "moving": {
+  "bar_median_abs_error": 0.5,
+  "objects": {
+   "15": {
+    "cls": "Car",
+    "matched_frames": 13,
+    "median_abs_error": 1.2665,
+    "median_gt_speed": 4.096,
+    "p90_abs_error": 3.0155,
+    "share_moving": 0.7692,
+    "small_sample": false
+   },
+   "2": {
+    "cls": "Car",
+    "matched_frames": 18,
+    "median_abs_error": 1.7001,
+    "median_gt_speed": 10.1593,
+    "p90_abs_error": 3.0748,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "5": {
+    "cls": "Car",
+    "matched_frames": 32,
+    "median_abs_error": 0.8744,
+    "median_gt_speed": 8.2894,
+    "p90_abs_error": 1.8986,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "6": {
+    "cls": "Car",
+    "matched_frames": 41,
+    "median_abs_error": 0.2826,
+    "median_gt_speed": 7.0662,
+    "p90_abs_error": 0.6825,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "7": {
+    "cls": "Van",
+    "matched_frames": 48,
+    "median_abs_error": 0.8821,
+    "median_gt_speed": 7.6032,
+    "p90_abs_error": 1.6714,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "8": {
+    "cls": "Truck",
+    "matched_frames": 30,
+    "median_abs_error": 2.0939,
+    "median_gt_speed": 6.1966,
+    "p90_abs_error": 3.9019,
+    "share_moving": 1.0,
+    "small_sample": false
+   },
+   "9": {
+    "cls": "Car",
+    "matched_frames": 26,
+    "median_abs_error": 0.1938,
+    "median_gt_speed": 0.0797,
+    "p90_abs_error": 0.3102,
+    "share_moving": 0.0,
+    "small_sample": false
+   }
+  },
+  "pass": false
+ },
+ "params": {
+  "association": "hungarian",
+  "cluster_min_points": 10,
+  "confirm_hits": 3,
+  "data_dir": "/data",
+  "dbscan_eps": 0.6,
+  "dbscan_min_samples": 8,
+  "drive": "2011_09_26_drive_0011",
+  "ego_box": [
+   2.5,
+   1.5
+  ],
+  "ego_compensation": false,
+  "gate_m": 2.0,
+  "ground_tile_band": 0.6,
+  "ground_tile_min_points": 30,
+  "ground_tile_size": 10.0,
+  "ground_tile_trim": 0.15,
+  "max_height": 3.0,
+  "max_length": 7.0,
+  "max_misses": 5,
+  "max_width": 3.0,
+  "min_height": 0.3,
+  "moving_sigma": 2.0,
+  "moving_speed": 0.7,
+  "output_dir": "/output",
+  "q_accel": 1.0,
+  "r_pos": 0.5,
+  "ransac_dist": 0.2,
+  "ransac_iters": 100,
+  "ransac_min_normal_z": 0.9,
+  "report_every_n": 50,
+  "roi_x": [
+   -40.0,
+   40.0
+  ],
+  "roi_y": [
+   -20.0,
+   20.0
+  ],
+  "roi_z": [
+   -3.0,
+   2.0
+  ],
+  "seed": 42,
+  "v0_sigma": 5.0,
+  "voxel_size": 0.15,
+  "warmup_frames": 5
+ },
+ "parked": {
+  "bar_each": 0.7,
+  "bar_median_of_medians": 0.5,
+  "median_of_medians": null,
+  "pass": false,
+  "tracklets": {
+   "1": {
+    "cls": "Car",
+    "matched_frames": 52,
+    "median_speed": 6.8682,
+    "p90_speed": 9.6885,
+    "share_moving": 1.0
+   },
+   "10": {
+    "cls": "Car",
+    "matched_frames": 0,
+    "median_speed": null,
+    "p90_speed": null,
+    "share_moving": null
+   },
+   "11": {
+    "cls": "Car",
+    "matched_frames": 0,
+    "median_speed": null,
+    "p90_speed": null,
+    "share_moving": null
+   },
+   "12": {
+    "cls": "Car",
+    "matched_frames": 1,
+    "median_speed": 12.5163,
+    "p90_speed": 12.5163,
+    "share_moving": 1.0
+   },
+   "13": {
+    "cls": "Misc",
+    "matched_frames": 9,
+    "median_speed": 12.6965,
+    "p90_speed": 13.2355,
+    "share_moving": 1.0
+   },
+   "3": {
+    "cls": "Pedestrian",
+    "matched_frames": 149,
+    "median_speed": 0.6289,
+    "p90_speed": 6.4609,
+    "share_moving": 0.3423
+   },
+   "4": {
+    "cls": "Cyclist",
+    "matched_frames": 71,
+    "median_speed": 4.1704,
+    "p90_speed": 8.2073,
+    "share_moving": 0.8592
+   }
+  },
+  "worst": {
+   "id": 13,
+   "median_speed": 12.6965
+  }
+ },
+ "seed": 42,
+ "tracking_frame": "velodyne",
+ "tracks": {
+  "confirmed": 359,
+  "rows": 11096
+ }
+}

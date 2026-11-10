@@ -115,3 +115,16 @@ def apply_overrides(params, overrides):
         except yaml.YAMLError as exc:
             raise ConfigError(f"key '{key}': cannot parse override value {raw!r}") from exc
     return params_from_dict(d)
+
+
+OUTPUT_ROOT = "/output"
+
+
+def output_root(drive, config_drive, base=None):
+    """The folder an offline script writes to by default: base for the drive of the config file, base/<drive> for
+    any other drive, so a second drive never overwrites the first one's outputs. The name is checked first."""
+    from core import kitti  # the drive-name rule lives with the data layout
+    if not isinstance(drive, str) or not kitti.DRIVE_NAME.fullmatch(drive):
+        raise kitti.DataError(f"drive name {drive!r} is not of the form YYYY_MM_DD_drive_NNNN (e.g. 2011_09_26_drive_0005)")
+    base = Path(OUTPUT_ROOT if base is None else base)
+    return base if drive == config_drive else base / drive

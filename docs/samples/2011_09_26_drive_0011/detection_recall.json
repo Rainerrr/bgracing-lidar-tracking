@@ -1,0 +1,190 @@
+{
+ "car_van": {
+  "matched": 324,
+  "recall": 0.9025,
+  "total": 359
+ },
+ "center_error_m": {
+  "mean": 0.4729,
+  "n": 605,
+  "p90": 1.2448
+ },
+ "drive": "2011_09_26_drive_0011",
+ "frames": 233,
+ "gate_m": 2.0,
+ "ground_truth": "present",
+ "params": {
+  "association": "hungarian",
+  "cluster_min_points": 10,
+  "confirm_hits": 3,
+  "data_dir": "/data",
+  "dbscan_eps": 0.6,
+  "dbscan_min_samples": 8,
+  "drive": "2011_09_26_drive_0011",
+  "ego_box": [
+   2.5,
+   1.5
+  ],
+  "ego_compensation": true,
+  "gate_m": 2.0,
+  "ground_tile_band": 0.6,
+  "ground_tile_min_points": 30,
+  "ground_tile_size": 10.0,
+  "ground_tile_trim": 0.15,
+  "max_height": 3.0,
+  "max_length": 7.0,
+  "max_misses": 5,
+  "max_width": 3.0,
+  "min_height": 0.3,
+  "moving_sigma": 2.0,
+  "moving_speed": 0.7,
+  "output_dir": "/output",
+  "q_accel": 1.0,
+  "r_pos": 0.5,
+  "ransac_dist": 0.2,
+  "ransac_iters": 100,
+  "ransac_min_normal_z": 0.9,
+  "report_every_n": 50,
+  "roi_x": [
+   -40.0,
+   40.0
+  ],
+  "roi_y": [
+   -20.0,
+   20.0
+  ],
+  "roi_z": [
+   -3.0,
+   2.0
+  ],
+  "seed": 42,
+  "v0_sigma": 5.0,
+  "voxel_size": 0.15,
+  "warmup_frames": 5
+ },
+ "per_class": {
+  "Car": {
+   "matched": 270,
+   "recall": 0.8852,
+   "small_sample": false,
+   "total": 305,
+   "tracklets": 11
+  },
+  "Cyclist": {
+   "matched": 75,
+   "recall": 1.0,
+   "small_sample": true,
+   "total": 75,
+   "tracklets": 1
+  },
+  "Misc": {
+   "matched": 16,
+   "recall": 1.0,
+   "small_sample": true,
+   "total": 16,
+   "tracklets": 1
+  },
+  "Pedestrian": {
+   "matched": 156,
+   "recall": 1.0,
+   "small_sample": true,
+   "total": 156,
+   "tracklets": 1
+  },
+  "Truck": {
+   "matched": 34,
+   "recall": 0.4722,
+   "small_sample": true,
+   "total": 72,
+   "tracklets": 1
+  },
+  "Van": {
+   "matched": 54,
+   "recall": 1.0,
+   "small_sample": true,
+   "total": 54,
+   "tracklets": 1
+  }
+ },
+ "per_tracklet": {
+  "0": {
+   "cls": "Car",
+   "matched": 17,
+   "recall": 1.0,
+   "total": 17
+  },
+  "1": {
+   "cls": "Car",
+   "matched": 57,
+   "recall": 1.0,
+   "total": 57
+  },
+  "10": {
+   "cls": "Car",
+   "matched": 2,
+   "recall": 0.6667,
+   "total": 3
+  },
+  "11": {
+   "cls": "Car",
+   "matched": 7,
+   "recall": 0.875,
+   "total": 8
+  },
+  "12": {
+   "cls": "Car",
+   "matched": 11,
+   "recall": 1.0,
+   "total": 11
+  },
+  "14": {
+   "cls": "Car",
+   "matched": 2,
+   "recall": 0.1333,
+   "total": 15
+  },
+  "15": {
+   "cls": "Car",
+   "matched": 29,
+   "recall": 0.617,
+   "total": 47
+  },
+  "2": {
+   "cls": "Car",
+   "matched": 25,
+   "recall": 0.9615,
+   "total": 26
+  },
+  "5": {
+   "cls": "Car",
+   "matched": 38,
+   "recall": 1.0,
+   "total": 38
+  },
+  "6": {
+   "cls": "Car",
+   "matched": 56,
+   "recall": 0.9825,
+   "total": 57
+  },
+  "7": {
+   "cls": "Van",
+   "matched": 54,
+   "recall": 1.0,
+   "total": 54
+  },
+  "9": {
+   "cls": "Car",
+   "matched": 26,
+   "recall": 1.0,
+   "total": 26
+  }
+ },
+ "seed": 42,
+ "unmatched_detections_in_region": {
+  "note": "detections in the evaluation region with no ground-truth match; not necessarily false",
+  "per_frame_max": 33,
+  "per_frame_mean": 20.3004,
+  "total": 4730
+ }
+}

@@ -19,8 +19,9 @@ from core import poses
 from processor import matching
 
 GT_HALF_WINDOW = 5
-PARKED = (3, 5, 6, 7, 8, 9, 10, 11, 13, 14)  # the parked tracklets: world net speed < 0.5 m/s
-MOVING = (0, 1)  # lead van, cyclist
+STATIC_NET_SPEED = 0.5  # m/s: a tracklet whose world net speed is below this is parked (static), otherwise it moves
+MOVING_MIN_BOX_FRAMES = 20  # a moving tracklet is speed-scored only with at least this many GT box-frames in the
+# evaluation region (about 2 s in view at 10 Hz); fixed before any second drive was scored
 PARKED_BAR_MEDIAN = 0.5  # bar: median over the parked tracklets of each tracklet's median speed (m/s)
 PARKED_BAR_EACH = 0.7  # bar: every parked tracklet's median speed; = moving_speed
 MOVING_BAR = 0.5  # bar: per object, median |filtered speed - GT speed| (m/s)
@@ -91,7 +92,30 @@ def gt_net_speed(gt_boxes, T_wv, stamps_ns):
     return net
 
 
-def gt_tags(track_rows, gt_boxes, T_wv, stamps_ns, p, min_net_speed=0.5):
+def region_box_frames(gt_boxes, p):
+    """{tracklet id: number of its GT box-frames in the evaluation region}."""
+    n = defaultdict(int)
+    for b in gt_boxes:
+        if bool(matching.in_eval_region(b.x, b.y, b.z, p)):
+            n[b.id] += 1
+    return dict(n)
+
+
+def parked_tracklets(net, region_counts):
+    """Sorted ids of the parked tracklets: world net speed below STATIC_NET_SPEED and at least one GT box-frame in
+    the evaluation region (a tracklet that is never in the region cannot be scored, so it must not fail the parked
+    test). net: gt_net_speed(); region_counts: region_box_frames()."""
+    return tuple(sorted(i for i, v in net.items() if v < STATIC_NET_SPEED and region_counts.get(i, 0) >= 1))
+
+
+def moving_tracklets(net, region_counts):
+    """Sorted ids of the moving tracklets whose speed is scored: world net speed at least STATIC_NET_SPEED and at
+    least MOVING_MIN_BOX_FRAMES GT box-frames in the evaluation region. region_counts: region_box_frames()."""
+    return tuple(sorted(i for i, v in net.items()
+                        if v >= STATIC_NET_SPEED and region_counts.get(i, 0) >= MOVING_MIN_BOX_FRAMES))
+
+
+def gt_tags(track_rows, gt_boxes, T_wv, stamps_ns, p, min_net_speed=STATIC_NET_SPEED):
     """{(pass, track_id): "GT #id Class"} for tracks whose most frequent GT match is a moving tracklet
     (world net speed >= min_net_speed, the complement of the static definition). For the offline report only:
     the labels come from the ground truth; the processor classifies nothing."""
@@ -120,6 +144,8 @@ def score(track_rows, gt_boxes, T_wv, stamps_ns, p):
         first_frame.setdefault((r["pass"], r["track_id"]), r["frame"])
     gt_vel = gt_world_velocity(gt_boxes, T_wv, stamps_ns)
     cls = {b.id: b.cls for b in gt_boxes}
+    net = gt_net_speed(gt_boxes, T_wv, stamps_ns)
+    in_region = region_box_frames(gt_boxes, p)
 
     samples = defaultdict(list)  # tracklet id -> [(track speed, gt speed, state)]
     for f, r, g in _matches(rows, gt_boxes, T_wv, p):
@@ -129,7 +155,7 @@ def score(track_rows, gt_boxes, T_wv, stamps_ns, p):
         samples[g.id].append((r["speed"], None if v is None else float(np.hypot(*v)), r["state"]))
 
     parked = {}
-    for tid in PARKED:
+    for tid in parked_tracklets(net, in_region):
         s = samples.get(tid, [])
         sp = [x[0] for x in s]
         parked[str(tid)] = {"cls": cls.get(tid), "matched_frames": len(s),
@@ -138,13 +164,14 @@ def score(track_rows, gt_boxes, T_wv, stamps_ns, p):
                             "share_moving": _r(sum(x[2] == "moving" for x in s) / len(s)) if s else None}
     medians = [v["median_speed"] for v in parked.values()]
     known = [m for m in medians if m is not None]
-    mom = float(np.median(known)) if len(known) == len(medians) else None
-    worst = max(parked.items(), key=lambda kv: -1 if kv[1]["median_speed"] is None else kv[1]["median_speed"])
+    mom = float(np.median(known)) if known and len(known) == len(medians) else None  # no parked tracklet: None
+    worst = (max(parked.items(), key=lambda kv: -1 if kv[1]["median_speed"] is None else kv[1]["median_speed"])
+             if parked else (None, {"median_speed": None}))
     parked_ok = (mom is not None and mom <= PARKED_BAR_MEDIAN
                  and all(m <= PARKED_BAR_EACH for m in known))
 
     moving = {}
-    for tid in MOVING:
+    for tid in moving_tracklets(net, in_region):
         err = [abs(x[0] - x[1]) for x in samples.get(tid, []) if x[1] is not None]
         moving[str(tid)] = {"cls": cls.get(tid), "matched_frames": len(err),
                             "median_abs_error": _r(np.median(err)) if err else None,
@@ -152,7 +179,8 @@ def score(track_rows, gt_boxes, T_wv, stamps_ns, p):
                             "median_gt_speed": _r(np.median([x[1] for x in samples[tid] if x[1] is not None])) if err else None,
                             "share_moving": _r(sum(x[2] == "moving" for x in samples[tid]) / len(samples[tid])) if samples.get(tid) else None,
                             "small_sample": cls.get(tid) in SMALL_SAMPLE_CLASSES}
-    moving_ok = all(v["median_abs_error"] is not None and v["median_abs_error"] <= MOVING_BAR for v in moving.values())
+    moving_ok = bool(moving) and all(  # an empty set fails: nothing was shown to be measured right
+        v["median_abs_error"] is not None and v["median_abs_error"] <= MOVING_BAR for v in moving.values())
 
     return {
         "ground_truth": "present",
@@ -161,7 +189,7 @@ def score(track_rows, gt_boxes, T_wv, stamps_ns, p):
                    "matching": f"per frame, Hungarian on 2D centers, gate {matching.EVAL_GATE_M} m, evaluation region",
                    "warmup_frames": p.warmup_frames, "aggregation": "by tracklet"},
         "parked": {"tracklets": parked, "median_of_medians": _r(mom),
-                   "worst": {"id": int(worst[0]), "median_speed": worst[1]["median_speed"]},
+                   "worst": {"id": None if worst[0] is None else int(worst[0]), "median_speed": worst[1]["median_speed"]},
                    "bar_median_of_medians": PARKED_BAR_MEDIAN, "bar_each": PARKED_BAR_EACH, "pass": bool(parked_ok)},
         "moving": {"objects": moving, "bar_median_abs_error": MOVING_BAR, "pass": bool(moving_ok)},
         "tracks": {"rows": len(rows), "confirmed": len(first_frame)},

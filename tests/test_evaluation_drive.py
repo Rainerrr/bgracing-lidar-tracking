@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from core import kitti, poses
-from processor import evaluation, track_scoring
+from processor import evaluation
 
 from conftest import SAMPLES_DIR
 
@@ -46,9 +46,28 @@ def walk(obj):
 
 # ---------------------------------------------------------------- consistency
 
-def test_the_static_tracklets_are_the_parked_fixture(inputs):
+PARKED_0005 = {3, 5, 6, 7, 8, 9, 10, 11, 13, 14}  # this drive's parked tracklets (world net speed < 0.5 m/s)
+MOVING_0005 = [0, 1]  # its moving tracklets with enough in-region box-frames: the lead van and the cyclist
+
+
+def test_the_static_tracklets_are_the_parked_fixture(inputs, params):
     gt, T_wv, stamps = inputs
-    assert evaluation.static_tracklets(gt, T_wv, stamps) == set(track_scoring.PARKED)
+    assert evaluation.static_tracklets(gt, T_wv, stamps, params) == PARKED_0005
+
+
+@pytest.mark.parametrize("run", ["on", "no_ego"])
+def test_the_rules_select_this_drives_parked_and_moving_tracklets(ev, run):
+    assert set(ev[run]["gt"]["static_tracklets"]) == PARKED_0005
+    assert ev[run]["gt"]["moving_tracklets"] == MOVING_0005
+
+
+@pytest.fixture(scope="module")
+def ego_speed(drive):
+    return evaluation.ego_speed_range(drive.oxts)
+
+
+def test_the_ego_speed_range_is_measured_from_the_oxts_velocities(ego_speed):
+    assert (round(ego_speed[0], 1), round(ego_speed[1], 1)) == (3.1, 6.5)
 
 
 @pytest.mark.parametrize("run", ["on", "no_ego"])
@@ -166,23 +185,23 @@ def test_parked_flicker_is_the_pooled_share_moving_of_the_parked_tracklets(ev):
 HEADINGS = ["## " + h for h in evaluation.PARTS]
 
 
-def render_pair(ev_on, ev_off, params):
-    return evaluation.render(ev_on, ev_off, evaluation.ablation(ev_on, ev_off), evaluation.render_meta(params))
+def render_pair(ev_on, ev_off, params, ego_speed):
+    return evaluation.render(ev_on, ev_off, evaluation.ablation(ev_on, ev_off), evaluation.render_meta(params, ego_speed))
 
 
 @pytest.fixture(scope="module")
-def text(ev, params):
-    return render_pair(ev["on"], ev["no_ego"], params)
+def text(ev, params, ego_speed):
+    return render_pair(ev["on"], ev["no_ego"], params, ego_speed)
 
 
-def test_two_runs_render_byte_identical_files(runs, ev, params, inputs, text):
-    again = render_pair(evaluate_run(runs["on_again"], params, inputs), ev["no_ego"], params)
+def test_two_runs_render_byte_identical_files(runs, ev, params, inputs, text, ego_speed):
+    again = render_pair(evaluate_run(runs["on_again"], params, inputs), ev["no_ego"], params, ego_speed)
     assert again == text
 
 
-def test_render_control_a_different_warm_up_changes_the_file(runs, params, inputs, ev, text):
+def test_render_control_a_different_warm_up_changes_the_file(runs, params, inputs, ev, text, ego_speed):
     other = dataclasses.replace(params, warmup_frames=params.warmup_frames + 1)
-    changed = render_pair(evaluate_run(runs["on"], other, inputs), ev["no_ego"], other)
+    changed = render_pair(evaluate_run(runs["on"], other, inputs), ev["no_ego"], other, ego_speed)
     assert changed != text
 
 
@@ -227,6 +246,14 @@ def test_every_row_that_is_not_gated_says_so(text):
 def test_the_summary_quotes_the_tracking_bars_from_the_same_run(text):
     summary = text.split(HEADINGS[0])[1].split(HEADINGS[1])[0]
     assert "gated by the parked-speed test" in summary and "gated by the moving-speed test" in summary
+
+
+def test_the_drive_specific_text_is_derived_from_this_drive(text):
+    """Each phrase below is computed from the drive; these are its values on this drive."""
+    assert "| Moving tracklets #0 Van, #1 Cyclist: median speed error (m/s) |" in text
+    assert "at about the ego speed (3.1 to 6.5 m/s), whether" in text
+    assert f"uses the same {CAR_VAN_BOX_FRAMES} box-frames" in text
+    assert "below 0.5 m/s (the 10 parked tracklets); every" in text
 
 
 # ---------------------------------------------------------------- committed samples match a fresh run

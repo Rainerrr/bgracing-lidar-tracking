@@ -284,12 +284,17 @@ def test_the_result_does_not_depend_on_the_row_order(params, car):
     assert a["labels"] == b["labels"] and a["stillness"] == b["stillness"] and a["coverage"] == b["coverage"]
 
 
-def test_the_parked_summary_is_n_a_unless_all_ten_parked_tracklets_were_scored():
-    full = {"tracklets": {i: {"median_speed": 0.2, "median_abs_error": 0.1} for i in evaluation.track_scoring.PARKED}}
+def test_the_parked_summary_is_n_a_unless_all_parked_tracklets_were_scored():
+    parked = [3, 5, 6, 7, 8, 9, 10, 11, 13, 14]
+    full = {"gt": {"static_tracklets": parked, "moving_tracklets": []},
+            "tracklets": {i: {"median_speed": 0.2, "median_abs_error": 0.1} for i in parked}}
     mom, worst, _ = evaluation._speed_summary(full)
     assert mom == 0.2 and worst == 0.2
-    partial = {"tracklets": {3: {"median_speed": 0.2, "median_abs_error": None}}}
+    partial = {"gt": {"static_tracklets": parked, "moving_tracklets": []},
+               "tracklets": {3: {"median_speed": 0.2, "median_abs_error": None}}}
     assert evaluation._speed_summary(partial)[:2] == (None, None)  # one tracklet must not stand in for ten
+    none = {"gt": {"static_tracklets": [], "moving_tracklets": []}, "tracklets": {}}
+    assert evaluation._speed_summary(none)[:2] == (None, None)  # no parked tracklet: n/a, never a value
 
 
 def test_the_part_4_note_does_not_claim_the_result_when_the_gate_fails(params, car):
@@ -298,3 +303,69 @@ def test_the_part_4_note_does_not_claim_the_result_when_the_gate_fails(params, c
     text = evaluation.render(on_e, off_e, evaluation.ablation(on_e, off_e), evaluation.render_meta(params))
     part4 = text.split("## " + evaluation.PARTS[4])[1].split("## " + evaluation.PARTS[5])[0]
     assert "The gate failed in this run" in part4 and "main result" not in part4
+
+
+# ---------------------------------------------------------------- drive-specific text comes from the drive
+
+def _render(on_e, off_e, params, ego_speed=None):
+    return evaluation.render(on_e, off_e, evaluation.ablation(on_e, off_e), evaluation.render_meta(params, ego_speed))
+
+
+def test_no_moving_tracklet_renders_a_named_n_a_row(params, car):
+    off = dataclasses.replace(params, ego_compensation=False)
+    on_e, off_e = run(still(1, 10.0, 0.0), car, params), run(still(1, 10.0, 0.0), car, off)
+    assert on_e["gt"]["moving_tracklets"] == []
+    text = _render(on_e, off_e, params)
+    assert "| Moving tracklets: none meets the rule | n/a (moving tracklets = 0) |" in text
+    assert "below 0.5 m/s (the 1 parked tracklet); every" in text
+
+
+def test_the_moving_row_names_the_selected_tracklets_and_their_class(params, car):
+    walker = [GtBox(f, 4, "Cyclist", 10.0 + 0.2 * f, 5.0, -1.0, 1.8, 0.6, 1.7, 0.0) for f in range(N)]  # 2 m/s, 20 frames
+    off = dataclasses.replace(params, ego_compensation=False)
+    on_e, off_e = run([], car + walker, params), run([], car + walker, off)
+    assert on_e["gt"]["moving_tracklets"] == [4]
+    assert "| Moving tracklets #4 Cyclist: median speed error (m/s) |" in _render(on_e, off_e, params)
+
+
+def test_the_ego_speed_range_comes_from_the_oxts_and_is_left_out_when_unknown(params, car):
+    oxts = np.zeros((3, 30))
+    oxts[:, 6], oxts[:, 7] = [0.0, 3.0, 0.0], [0.0, 4.0, 6.5]  # north, east: 0, 5 and 6.5 m/s
+    assert evaluation.ego_speed_range(oxts) == (0.0, 6.5)
+    off = dataclasses.replace(params, ego_compensation=False)
+    on_e, off_e = run([], car, params), run([], car, off)
+    assert "at about the ego speed (0.0 to 6.5 m/s), whether" in _render(on_e, off_e, params, (0.0, 6.5))
+    assert "at about the ego speed, whether" in _render(on_e, off_e, params)
+
+
+def test_no_parked_tracklet_is_said_in_words(params):
+    mover = [GtBox(f, 2, "Car", 10.0 + 0.2 * f, 0.0, -1.0, 4.0, 1.8, 1.5, 0.0) for f in range(N)]
+    off = dataclasses.replace(params, ego_compensation=False)
+    text = _render(run([], mover, params), run([], mover, off), params)
+    assert "below 0.5 m/s (no parked tracklets); every" in text and "None" not in text
+
+
+def test_a_parked_tracklet_that_was_never_scored_is_named_as_the_reason_for_n_a(params, car):
+    """Two parked tracklets, one tracked and one never matched: the summary says which reason, not 'zero tracklets'."""
+    other = gt(5, "Car", 30.0, 8.0)
+    off = dataclasses.replace(params, ego_compensation=False)
+    on_e, off_e = run(still(1, 10.0, 0.0), car + other, params), run(still(1, 10.0, 0.0), car + other, off)
+    assert on_e["gt"]["static_tracklets"] == [0, 5]
+    text = _render(on_e, off_e, params)
+    assert "| n/a (1 of 2 parked tracklets not scored) |" in text and "parked tracklets = 0" not in text
+
+
+def test_the_printed_command_reproduces_the_drive_it_describes(params):
+    other = dataclasses.replace(params, drive="2011_09_26_drive_0011")
+    assert evaluation.render_meta(params, None, params.drive)["command"] == evaluation.COMMAND  # the config's drive: unchanged
+    assert evaluation.render_meta(params)["command"] == evaluation.COMMAND
+    cmd = evaluation.render_meta(other, None, params.drive)["command"]
+    assert cmd == evaluation.COMMAND + " --set drive=2011_09_26_drive_0011"
+
+
+def test_another_drive_does_not_claim_the_x86_check(params, car):
+    off = dataclasses.replace(params, ego_compensation=False)
+    on_e, off_e = run([], car, params), run([], car, off)
+    other = dataclasses.replace(params, drive="2011_09_26_drive_0011")
+    text = evaluation.render(on_e, off_e, evaluation.ablation(on_e, off_e), evaluation.render_meta(other, None, params.drive))
+    assert "verified on arm64; not checked on x86_64" in text and "GitHub Actions" not in text

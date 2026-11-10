@@ -3,7 +3,6 @@ controls and determinism. Bars fixed before any tracking result, defined in proc
 Fails, never skips, without ./data."""
 import hashlib
 
-from processor import track_scoring
 from scripts import run_offline
 
 from conftest import DATA_DIR
@@ -15,9 +14,12 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_the_parked_and_moving_sets_are_the_pose_check_fixture():
+def test_the_parked_and_moving_sets_are_the_pose_check_fixture(runs):
+    """The rules pick exactly the pose check's parked tracklets and its two moving ones (the van and the cyclist)."""
     from test_pose_check import MOVING, PARKED
-    assert track_scoring.PARKED == PARKED and track_scoring.MOVING == tuple(sorted(MOVING))
+    sp = runs["on"]["speeds"]
+    assert tuple(int(i) for i in sp["parked"]["tracklets"]) == PARKED
+    assert tuple(int(i) for i in sp["moving"]["objects"]) == tuple(sorted(MOVING))
 
 
 # ---------------------------------------------------------------- parked speeds
@@ -96,5 +98,6 @@ def test_report_tags_name_the_moving_tracklets_and_no_parked_one(runs):
     tags = runs["on"]["gt_tags"]
     tagged = {t.split()[1] for t in tags.values()}  # "#0", "#1", ...
     assert {"#0", "#1"} <= tagged, tags  # the van and the cyclist are always found
-    assert not tagged & {f"#{i}" for i in track_scoring.PARKED}, tags
+    from test_pose_check import PARKED
+    assert not tagged & {f"#{i}" for i in PARKED}, tags
     assert all(t.startswith("GT #") for t in tags.values())

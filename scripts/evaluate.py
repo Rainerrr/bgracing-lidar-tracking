@@ -5,7 +5,8 @@
 
 No publisher and no Foxglove. Runs scripts/run_offline.py in-process twice (its normal outputs go to
 /output/offline and /output/offline/no_ego), evaluates the returned tracks in memory (processor/evaluation.py)
-and writes /output/evaluation.md atomically. Two runs give byte-identical files on the same CPU architecture.
+and writes /output/evaluation.md atomically. For a drive other than the config file's (--set drive=...), all of
+these default to /output/<drive>/ instead. Two runs give byte-identical files on the same CPU architecture.
 
 Exit codes: 0 on success, also when the ablation gate fails (the file is the evidence; verify enforces the gate);
 1 on a missing drive or tracklet file (naming scripts/download_kitti.sh), a bad config or --set, or an unwritable
@@ -24,7 +25,7 @@ DEFAULT_OUT = "/output/evaluation.md"
 DEFAULT_OFFLINE = "/output/offline"
 
 
-def run_evaluation(params, data_dir=None, offline_dir=DEFAULT_OFFLINE, log=print):
+def run_evaluation(params, data_dir=None, offline_dir=DEFAULT_OFFLINE, log=print, config_drive=None):
     """Both runs, both evaluations, the ablation and the rendered text. Returns a dict."""
     drive = kitti.load_drive(data_dir or params.data_dir, params.drive)
     gt = kitti.gt_boxes(kitti.load_tracklets(drive.tracklet_path))  # before any run: a missing file stops here
@@ -37,24 +38,30 @@ def run_evaluation(params, data_dir=None, offline_dir=DEFAULT_OFFLINE, log=print
         r = run_offline.run(p, out, data_dir)
         results[name] = evaluation.evaluate(r["track_rows"], r["dets_by_frame"], gt, T_wv, drive.stamps_ns, p, drive.n_frames)
     abl = evaluation.ablation(results["on"], results["off"])
-    text = evaluation.render(results["on"], results["off"], abl, evaluation.render_meta(params))
+    text = evaluation.render(results["on"], results["off"], abl, evaluation.render_meta(params, evaluation.ego_speed_range(drive.oxts), config_drive))
     return {"text": text, "ablation": abl, "on": results["on"], "off": results["off"]}
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", default=run_offline.DEFAULT_CONFIG)
-    ap.add_argument("--out", default=DEFAULT_OUT, help=f"the evaluation file (default {DEFAULT_OUT})")
-    ap.add_argument("--offline-dir", default=DEFAULT_OFFLINE,
-                    help=f"where the two offline runs write (default {DEFAULT_OFFLINE}; the no-ego run goes to <dir>/no_ego)")
+    ap.add_argument("--out", default=None, help=f"the evaluation file (default {DEFAULT_OUT}; /output/<drive>/evaluation.md "
+                                                 "for a drive other than the config file's)")
+    ap.add_argument("--offline-dir", default=None,
+                    help=f"where the two offline runs write (default {DEFAULT_OFFLINE}, or /output/<drive>/offline; "
+                         "the no-ego run goes to <dir>/no_ego)")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a config value (repeatable)")
     ap.add_argument("--data-dir", default=None, help="override data_dir from the config (tests)")
     args = ap.parse_args(argv)
-    out = Path(args.out)
+    out = Path(args.out) if args.out else Path(DEFAULT_OUT)
     try:
-        params = config.apply_overrides(config.load_params(args.config), args.set)
+        base = config.load_params(args.config)
+        params = config.apply_overrides(base, args.set)
+        root = config.output_root(params.drive, base.drive)
+        out = Path(args.out) if args.out else root / Path(DEFAULT_OUT).name
+        offline_dir = args.offline_dir or str(root / Path(DEFAULT_OFFLINE).name)
         out.parent.mkdir(parents=True, exist_ok=True)  # an unwritable path fails now, before the two runs
-        res = run_evaluation(params, args.data_dir, args.offline_dir)
+        res = run_evaluation(params, args.data_dir, offline_dir, config_drive=base.drive)
         records.atomic_write(out, res["text"])
     except (config.ConfigError, kitti.DataError, ValueError) as exc:
         print(f"evaluate: {exc}", file=sys.stderr)

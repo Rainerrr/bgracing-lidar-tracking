@@ -39,6 +39,7 @@ CALLBACK_SCOPE = "whole cloud callback: decode, detect, track, publish, rows, an
 WRITE_SCOPE = "periodic write_outputs(): every CSV rewritten from the log, plus metrics.json"
 IGNORED_PARAMS = {"use_sim_time", "start_type_description_service"}  # declared by rclpy itself
 ODOM_CACHE = 64  # stamps; odom normally arrives just before its cloud
+MISMATCH_AFTER = 10  # if this many first sweeps all carry stamps of another drive, say so once, as an error
 
 
 def stamp_ns(stamp):
@@ -78,6 +79,7 @@ class ObstacleTrackerNode(Node):
         self.log = []
         self.pass_no, self.last_stamp = 0, None
         self.clouds = self.unknown_stamps = self.no_odom = self.duplicate_stamps = 0
+        self.drive_mismatch = False
         self.odom = OrderedDict()  # stamp_ns -> T_world_velo, bounded; stamps repeat with equal poses each pass
         self.write_ms = []
         self._last_no_odom_log = 0.0
@@ -94,7 +96,7 @@ class ObstacleTrackerNode(Node):
         self.create_timer(10.0, self.on_wait_timer)
         self.write_outputs()  # a zero-frame metrics.json exists from the start
         self.get_logger().info(
-            f"tracking ready: {self.drive.n_frames} frames known, frame={self.track_frame}, "
+            f"tracking ready: {self.p.drive}, {self.drive.n_frames} frames known, frame={self.track_frame}, "
             f"association={self.p.association}, gate={self.p.gate_m} m, q_accel={self.p.q_accel}, r_pos={self.p.r_pos}, "
             f"moving if speed - {self.p.moving_sigma} sigma > {self.p.moving_speed} m/s; waiting for the first sweep")
 
@@ -118,6 +120,12 @@ class ObstacleTrackerNode(Node):
         if frame is None:
             self.unknown_stamps += 1
             self.get_logger().warning(f"stamp {ns} is not in the drive's timestamps; sweep skipped")
+            if self.clouds == MISMATCH_AFTER and self.unknown_stamps == MISMATCH_AFTER:
+                self.drive_mismatch = True
+                self.get_logger().error(
+                    f"the first {MISMATCH_AFTER} sweeps carry stamps that are not in {self.p.drive}: the publisher is "
+                    "replaying a different drive; set KITTI_DRIVE for both services (see the README)")
+                self.write_outputs()  # nothing is processed in this state, so no periodic write would record it
             return
         if self.last_stamp is not None and ns == self.last_stamp:
             self.duplicate_stamps += 1
@@ -191,7 +199,7 @@ class ObstacleTrackerNode(Node):
             "mode": "live", "seed": self.p.seed, "params": dataclasses.asdict(self.p), "platform": records.platform_info(),
             "frames_expected": expected, "frames_processed": processed, "frames_dropped": expected - processed,
             "first_frame_seen": log[0]["frame"] if log else None, "unknown_stamps": self.unknown_stamps,
-            "no_odom": self.no_odom, "duplicate_stamps": self.duplicate_stamps,
+            "no_odom": self.no_odom, "duplicate_stamps": self.duplicate_stamps, "drive_mismatch": self.drive_mismatch,
             "clouds_received": self.clouds, "passes": len(span),
             "clean_passes": clean_passes(frames, self.drive.n_frames),
             "processed_frames": frames,
